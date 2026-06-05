@@ -30,6 +30,7 @@ def build_index():
 def trial_search(query: str, top_n: int = 14) -> dict:
     if _bm25 is None:
         build_index()
+    top_n = int(top_n)
     tokens = query.lower().split()
     scores = _bm25.get_scores(tokens)
     top_indices = sorted(range(len(scores)), key=lambda i: -scores[i])[:top_n]
