@@ -40,7 +40,7 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
         {"role": "user", "content": f"Match this patient to relevant trials:\n{json.dumps(patient_json, indent=2)}"},
     ]
 
-    max_iters = 12
+    max_iters = 25
     #iterate through the agent loop a maximum of 12 times
     for iteration in range(max_iters):
         # Call Nebius (OpenAI-compatible chat completions API) for the next LLM turn

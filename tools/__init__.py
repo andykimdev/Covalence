@@ -3,7 +3,7 @@ from tools.trial_search import trial_search
 from tools.parse_criteria import parse_criteria
 from tools.check_eligibility import check_eligibility
 from tools.validate_verdicts import validate_verdicts
-from tools.rank_rationale import rank_with_rationale
+from tools.rank_with_rationale import rank_with_rationale
 
 
 TOOL_SCHEMAS = [
@@ -20,7 +20,7 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "search query, e.g. 'HER2+ metastatic breast cancer trastuzumab progression'"},
+                    "query": {"type": "string", "description": "search query covering the patient's key clinical features, e.g. 'type 2 diabetes NAFLD adult' or 'atrial fibrillation anticoagulation'"},
                     "top_n": {"type": "integer", "default": 14},
                 },
                 "required": ["query"],
@@ -49,7 +49,7 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "check_eligibility",
             "description": (
-                "Evaluate a patient against a single trial's structured criteria. "
+                "Evaluate a patient against a single trial's criteria. "
                 "Returns per-criterion verdicts (PASS, FAIL, or UNKNOWN), an overall assessment, "
                 "and a list of missing patient data needed to convert UNKNOWNs. "
                 "Call this once per candidate trial after parse_criteria."
@@ -57,10 +57,10 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "patient": {"type": "object", "description": "patient JSON"},
+                    "patient_id": {"type": "string", "description": "patient UUID"},
                     "trial_id": {"type": "string", "description": "NCT ID"},
                 },
-                "required": ["patient", "trial_id"],
+                "required": ["patient_id", "trial_id"],
             },
         },
     },
@@ -70,17 +70,17 @@ TOOL_SCHEMAS = [
             "name": "validate_verdicts",
             "description": (
                 "Self-check the verdict objects against the patient record. "
-                "Flags any PASS verdicts that should have been UNKNOWN (patient field is null). "
+                "Flags any PASS verdicts that should have been UNKNOWN (patient bundle lacks the relevant lab or observation). "
                 "Call this once after check_eligibility for all trials, before ranking. "
                 "If issues are flagged, the agent should re-run check_eligibility on the affected trials."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "patient": {"type": "object"},
+                    "patient_id": {"type": "string", "description": "patient UUID"},
                     "verdict_objects": {"type": "array", "items": {"type": "object"}},
                 },
-                "required": ["patient", "verdict_objects"],
+                "required": ["patient_id", "verdict_objects"],
             },
         },
     },
