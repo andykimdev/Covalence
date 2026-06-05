@@ -33,7 +33,7 @@ def enrich_patient_dict(bundle: dict) -> dict:
     expanded = expand_indications(parsed, inferred)
     all_indications = _merge_indications(parsed, inferred, expanded)
 
-    enriched = dict(bundle)
+    enriched = _slim_bundle(bundle)
     enriched["inferred_conditions"] = [dataclasses.asdict(ic) for ic in inferred]
     enriched["care_gaps"] = [dataclasses.asdict(g) for g in gaps]
     enriched["expanded_indications"] = [dataclasses.asdict(ei) for ei in expanded]
@@ -64,6 +64,26 @@ def run_pipeline(bundles_path: str | Path) -> list[ExpandedPatient]:
     _write_output(results, output_path)
     print(f"Pipeline output written to {output_path}")
     return results
+
+
+def _slim_bundle(bundle: dict) -> dict:
+    """Return a copy of the bundle with PRAPARE observations removed and one reading per code kept."""
+    slimmed = dict(bundle)
+
+    # PRAPARE social-determinants codes all begin with "93" and are not used for trial eligibility.
+    seen_codes: set[str] = set()
+    kept = []
+    for obs in sorted(bundle.get("observations", []), key=lambda o: o.get("date", ""), reverse=True):
+        code = obs.get("code", "")
+        if code.startswith("93"):
+            continue
+        if code not in seen_codes:
+            seen_codes.add(code)
+            kept.append(obs)
+
+    slimmed["observations"] = kept
+    slimmed.pop("summary", None)
+    return slimmed
 
 
 def _merge_indications(parsed, inferred, expanded) -> list[str]:

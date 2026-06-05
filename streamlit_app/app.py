@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.loop import run_agent
+from agent.pipeline import enrich_patient_dict
 from data.load_fixtures import load_all, all_patients, get_ground_truth
 from tools.trial_search import build_index
 
@@ -29,38 +30,100 @@ def init_fixtures(snapshot: str):
     return snapshot
 
 
-def render_event(event: dict):
-    """Render a single trace event into the current container."""
+_STAGES = ["Searching trials", "Parsing criteria", "Checking eligibility", "Validating", "Ranking"]
+_TOOL_TO_STAGE = {
+    "trial_search": 0,
+    "parse_criteria": 1,
+    "check_eligibility": 2,
+    "validate_verdicts": 3,
+    "rank_with_rationale": 4,
+}
+
+
+def _plain_english(event: dict) -> str:
+    """Return a one-sentence plain-English summary of a tool event."""
+    name = event.get("name", "")
+    args = event.get("args", {})
+    result = event.get("result", {})
     t = event.get("type")
-    iter_num = event.get("iter", "?")
+
+    if t == "tool_call":
+        if name == "trial_search":
+            return f"Searching for trials matching: *{args.get('query', '')}*"
+        if name == "parse_criteria":
+            return f"Parsing eligibility criteria for **{args.get('trial_id', '')}**"
+        if name == "check_eligibility":
+            return f"Checking patient eligibility for **{args.get('trial_id', '')}**"
+        if name == "validate_verdicts":
+            return "Validating eligibility verdicts for consistency"
+        if name == "rank_with_rationale":
+            return "Ranking matched trials and writing rationale"
+
+    if t == "tool_result":
+        if name == "trial_search":
+            n = len(result.get("trials", []))
+            return f"Found **{n}** candidate trial{'s' if n != 1 else ''}"
+        if name == "parse_criteria":
+            inc = len(result.get("inclusion", []))
+            exc = len(result.get("exclusion", []))
+            return f"Extracted **{inc}** inclusion and **{exc}** exclusion criteria"
+        if name == "check_eligibility":
+            overall = result.get("overall", "?")
+            trial_id = result.get("trial_id", "")
+            verdicts = result.get("criteria_verdicts", [])
+            passes = sum(1 for v in verdicts if v.get("verdict") == "PASS")
+            total = len(verdicts)
+            icon = {"PASS": "🟢", "FAIL": "🔴", "PARTIAL": "🟡"}.get(overall, "⚪")
+            return f"{icon} **{overall}** for {trial_id} — {passes}/{total} criteria met"
+        if name == "validate_verdicts":
+            issues = result.get("issues", [])
+            if issues:
+                return f"Found **{len(issues)}** verdict issue{'s' if len(issues) != 1 else ''} to review"
+            return "All verdicts validated — no issues found"
+        if name == "rank_with_rationale":
+            n = len(result.get("ranked_matches", []))
+            return f"Ranked **{n}** trial{'s' if n != 1 else ''} — results ready"
+
+    return ""
+
+
+def render_progress(trace: list) -> None:
+    """Render a named stage progress bar based on the tools called so far."""
+    reached = -1
+    for event in trace:
+        stage = _TOOL_TO_STAGE.get(event.get("name", ""), -1)
+        if stage > reached:
+            reached = stage
+
+    cols = st.columns(len(_STAGES))
+    for i, (col, label) in enumerate(zip(cols, _STAGES)):
+        if i < reached:
+            col.success(f"✓ {label}")
+        elif i == reached:
+            col.info(f"▶ {label}")
+        else:
+            col.markdown(f"<span style='color:grey'>○ {label}</span>", unsafe_allow_html=True)
+
+
+def render_event(event: dict):
+    """Render a single trace event as a plain-English summary."""
+    t = event.get("type")
+    summary = _plain_english(event)
 
     if t == "agent_thinking":
         content = event.get("content") or ""
         if content.strip():
-            with st.chat_message("assistant", avatar="🧠"):
-                st.caption(f"Turn {iter_num} · reasoning")
+            with st.expander(f"Agent reasoning (turn {event.get('iter', '?')})", expanded=False):
                 st.markdown(content[:1200])
 
-    elif t == "tool_call":
-        with st.chat_message("user", avatar="🛠"):
-            st.caption(f"Turn {iter_num} · calling tool")
-            st.markdown(f"**`{event['name']}`**")
-            args_str = json.dumps(event.get("args", {}), indent=2, default=str)
-            if len(args_str) > 400:
-                args_str = args_str[:400] + "\n... (truncated)"
-            st.code(args_str, language="json")
+    elif t == "tool_call" and summary:
+        st.markdown(f"⟶ {summary}")
 
-    elif t == "tool_result":
-        with st.chat_message("assistant", avatar="📥"):
-            st.caption(f"Result from {event.get('name', '?')}")
-            result_str = json.dumps(event.get("result", {}), indent=2, default=str)
-            if len(result_str) > 700:
-                result_str = result_str[:700] + "\n... (truncated)"
-            st.code(result_str, language="json")
+    elif t == "tool_result" and summary:
+        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{summary}", unsafe_allow_html=True)
 
     elif t == "final":
-        with st.chat_message("assistant", avatar="✅"):
-            st.markdown("**Agent complete**")
+        st.success("Analysis complete")
 
 
 def patient_label(p: dict) -> str:
@@ -152,22 +215,22 @@ with col_patient:
     demo = selected_patient.get("demographics", {})
     st.caption(f"**Age:** {demo.get('age', '?')} · **Gender:** {demo.get('gender', '?')}")
 
-    summary = selected_patient.get("summary", {})
-
     with st.expander("Active conditions"):
-        for cond in summary.get("active_conditions", []):
-            st.markdown(f"- {cond}")
+        for cond in selected_patient.get("conditions", []):
+            if cond.get("active"):
+                st.markdown(f"- {cond.get('description', cond.get('code', '?'))}")
 
     with st.expander("Current medications"):
-        for med in summary.get("active_medications", []):
-            st.markdown(f"- {med}")
+        for med in selected_patient.get("medications", []):
+            st.markdown(f"- {med.get('description', med.get('code', '?'))}")
 
     with st.expander("Full patient bundle"):
         st.json(selected_patient, expanded=False)
 
 with col_trace:
     st.subheader("Agent Reasoning Trace")
-    trace_box = st.container(height=700, border=True)
+    progress_slot = st.empty()
+    trace_box = st.container(height=620, border=True)
 
 
 # ----- AGENT RUN -----
@@ -181,16 +244,20 @@ if run:
 
             def on_event(event):
                 st.session_state.trace.append(event)
+                with progress_slot.container():
+                    render_progress(st.session_state.trace)
                 render_event(event)
 
             try:
-                result = run_agent(selected_patient, trace_callback=on_event)
+                enriched = enrich_patient_dict(selected_patient)
+                result = run_agent(enriched, trace_callback=on_event)
                 st.session_state.result = result
             except Exception as e:
                 st.error(f"Agent crashed: {e}")
 
 elif st.session_state.trace:
-    # Re-render saved trace on page reload
+    with progress_slot.container():
+        render_progress(st.session_state.trace)
     with trace_box:
         for event in st.session_state.trace:
             render_event(event)
@@ -214,10 +281,21 @@ if st.session_state.result:
                     score = match.get("score", 0)
                     if isinstance(score, (int, float)):
                         st.metric("Score", f"{score:.2f}")
+                    adj_score = match.get("adjusted_score")
+                    if adj_score is not None and isinstance(adj_score, (int, float)):
+                        st.metric("Adjusted", f"{adj_score:.2f}", help="Score if care gaps addressed")
 
                 with c_main:
                     st.markdown(f"**{match.get('trial_id', '?')}**")
                     st.markdown(match.get("title", ""))
+
+                    match_pct = match.get("match_pct", "")
+                    adj_pct = match.get("adjusted_match_pct", "")
+                    if match_pct:
+                        st.markdown(f"**Match:** {match_pct}")
+                    if adj_pct:
+                        st.markdown(f"**Adjusted:** {adj_pct}")
+
                     summary_text = match.get("summary", "")
                     if summary_text:
                         st.markdown(f"_{summary_text}_")
@@ -227,14 +305,27 @@ if st.session_state.result:
                     color_map = {"PASS": "🟢", "FAIL": "🔴", "PARTIAL": "🟡"}
                     st.markdown(f"{color_map.get(overall, '⚪')} **Overall:** {overall}")
 
+                    resolvable = match.get("resolvable_criteria", [])
+                    if resolvable:
+                        with st.expander(f"🔧 {len(resolvable)} resolvable criterion — care gap fix unlocks eligibility"):
+                            for rc in resolvable:
+                                st.markdown(f"**Criterion:** {rc.get('criterion', '')}")
+                                st.markdown(f"**Care gap:** {rc.get('care_gap', '')}")
+                                st.success(f"Action: {rc.get('action', '')}")
+
                     with st.expander("Per-criterion verdicts"):
                         for cv in verdict.get("criteria_verdicts", []):
                             v = cv.get("verdict", "?")
-                            icon = {"PASS": "✅", "FAIL": "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
+                            resolvable_flag = cv.get("resolvable", False)
+                            if resolvable_flag:
+                                icon = "🔧"
+                            else:
+                                icon = {"PASS": "✅", "FAIL": "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
                             criterion_text = cv.get("criterion", "")
                             if len(criterion_text) > 220:
                                 criterion_text = criterion_text[:220] + "..."
-                            st.markdown(f"{icon} **{v}** — {criterion_text}")
+                            label = f"{v} (resolvable)" if resolvable_flag else v
+                            st.markdown(f"{icon} **{label}** — {criterion_text}")
                             rationale = cv.get("rationale", "")
                             if rationale:
                                 st.caption(rationale)

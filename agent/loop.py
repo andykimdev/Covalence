@@ -50,6 +50,8 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
             messages=messages,
             tools=TOOL_SCHEMAS,
             tool_choice="auto",
+            temperature=0.0,
+            parallel_tool_calls=False, #  on nebius, Llama 3.3 doesnt support multi tool call
         )
         # Get the response from the LLM
         msg = response.choices[0].message
@@ -91,6 +93,8 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
 
             try:
                 result = execute_tool(tool_call.function.name, args)
+                if tool_call.function.name == "check_eligibility":
+                    result = _flag_resolvable(result, patient_json.get("care_gaps", []))
             except Exception as e:
                 result = {"error": str(e)}
 
@@ -108,7 +112,27 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
                 "content": json.dumps(result),
             })
 
+            if tool_call.function.name == "rank_with_rationale" and "ranked_matches" in result:
+                if trace_callback:
+                    trace_callback({"type": "final", "content": None})
+                return result
+
     return {"error": "max iterations reached", "messages": messages}
+
+
+def _flag_resolvable(verdict: dict, care_gaps: list) -> dict:
+    """Annotate check_eligibility results with resolvable flags by matching FAIL criteria against care gaps."""
+    if "criteria_verdicts" not in verdict:
+        return verdict
+    gap_drugs = {g["missing_drug"].lower() for g in care_gaps}
+    for v in verdict["criteria_verdicts"]:
+        if v["verdict"] == "FAIL":
+            criterion_lower = v["criterion"].lower()
+            v["resolvable"] = any(drug in criterion_lower for drug in gap_drugs)
+        else:
+            v["resolvable"] = False
+    verdict["resolvable_count"] = sum(1 for v in verdict["criteria_verdicts"] if v.get("resolvable"))
+    return verdict
 
 
 def parse_final_output(content: str) -> dict:

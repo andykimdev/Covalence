@@ -6,7 +6,7 @@ from data.load_fixtures import get_trial
 
 load_dotenv()
 client = OpenAI(base_url=os.getenv("NEBIUS_BASE_URL"), api_key=os.getenv("NEBIUS_API_KEY"))
-MODEL = os.getenv("MODEL_PARSE", "meta-llama/Meta-Llama-3.1-8B-Instruct")
+model = os.getenv("MODEL_AGENT", "meta-llama/Llama-3.3-70B-Instruct")
 
 #define a cache to store the parsed criteria for each trial
 _parse_cache: dict[str, dict] = {}
@@ -28,7 +28,7 @@ def parse_criteria(trial_id: str) -> dict:
         return {"trial_id": trial_id, "inclusion": [], "exclusion": []}
 
     response = client.chat.completions.create(
-        model=MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": PARSE_CRITERIA_PROMPT},
             {"role": "user", "content": raw_text},
