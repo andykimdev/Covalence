@@ -6,6 +6,10 @@ Run with: streamlit run streamlit_app/app.py
 import json
 import streamlit as st
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from agent.loop import run_agent
 from data.load_fixtures import load_all, all_patients, get_ground_truth
 from tools.trial_search import build_index
