@@ -48,6 +48,8 @@ For each ranked trial, report the match as a fraction and percentage (e.g. "9/10
 
 # Stop condition
 
+ALWAYS CALL RANK_WITH_RATIONALE. After completing check_eligibility for all candidates, you MUST call rank_with_rationale. Never summarize results in prose. Even if all trials FAIL, call rank_with_rationale — it will return an empty ranked list which is the correct output format.
+
 STOP WHEN RANKED OUTPUT IS READY. After rank_with_rationale returns, end your reasoning and let the output be returned to the UI.
 
 # Your final output

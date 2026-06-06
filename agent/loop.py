@@ -43,6 +43,7 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
     max_iters = 25
     _search_cache: dict[str, dict] = {}
     _search_count = 0
+    _eligibility_verdicts: list[dict] = []
 
     for iteration in range(max_iters):
         # Call Nebius (OpenAI-compatible chat completions API) for the next LLM turn
@@ -72,6 +73,15 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
         # No tool calls means agent is done
         # The agent is done if it does not need to call any tools to answer the task
         if not msg.tool_calls:
+            if _eligibility_verdicts:
+                from tools.rank_with_rationale import rank_with_rationale
+                if trace_callback:
+                    trace_callback({"type": "tool_call", "name": "rank_with_rationale", "args": {}, "iter": iteration})
+                result = rank_with_rationale(patient_json.get("patient_id", ""), _eligibility_verdicts)
+                if trace_callback:
+                    trace_callback({"type": "tool_result", "name": "rank_with_rationale", "result": result, "iter": iteration})
+                    trace_callback({"type": "final", "content": None})
+                return result
             if trace_callback:
                 trace_callback({"type": "final", "content": msg.content})
             return {"outcome": "no_match", "reason": "Agent completed without finding matching trials."}
@@ -108,6 +118,8 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
                     result = execute_tool(tool_call.function.name, args)
                 if tool_call.function.name == "check_eligibility":
                     result = _flag_resolvable(result, patient_json.get("care_gaps", []))
+                    if "criteria_verdicts" in result:
+                        _eligibility_verdicts.append(result)
             except Exception as e:
                 result = {"error": str(e)}
 

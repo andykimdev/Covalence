@@ -8,7 +8,7 @@ from agent.prompts import RANK_WITH_RATIONALE_PROMPT
 from data.load_fixtures import get_trial
 
 load_dotenv()
-client = OpenAI(base_url=os.getenv("NEBIUS_BASE_URL"), api_key=os.getenv("NEBIUS_API_KEY"))
+client = OpenAI(base_url=os.getenv("NEBIUS_BASE_URL_TOKENFACTORY", os.getenv("NEBIUS_BASE_URL")), api_key=os.getenv("NEBIUS_API_KEY"))
 MODEL = os.getenv("MODEL_RANK", "meta-llama/Llama-3.3-70B-Instruct")
 
 

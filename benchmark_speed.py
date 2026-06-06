@@ -39,8 +39,13 @@ def run_benchmark(patients: list[dict]) -> None:
 
         enriched = enrich_patient_dict(patient)
 
+        tool_calls = []
+        def trace(event):
+            if event.get("type") == "tool_call":
+                tool_calls.append(event.get("name"))
+
         start = time.time()
-        result = run_agent(enriched)
+        result = run_agent(enriched, trace_callback=trace)
         elapsed = time.time() - start
 
         if "ranked_matches" in result:
@@ -48,7 +53,9 @@ def run_benchmark(patients: list[dict]) -> None:
         else:
             outcome = result.get("outcome", "unknown")
 
-        print(f"  time: {elapsed:.1f}s  outcome: {outcome}")
+        from collections import Counter
+        call_summary = ", ".join(f"{k}×{v}" for k, v in Counter(tool_calls).items())
+        print(f"  time: {elapsed:.1f}s  outcome: {outcome}  calls: [{call_summary}]")
         results.append({"pid": pid[:8], "elapsed": elapsed, "outcome": outcome})
 
     total_elapsed = time.time() - total_start
