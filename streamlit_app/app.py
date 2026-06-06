@@ -159,31 +159,250 @@ def patient_tab_label(pid: str) -> str:
     return pid[:8] + "..."
 
 
-def render_patient_info(patient: dict):
-    st.subheader("Patient")
-    gt = get_ground_truth(patient["patient_id"])
-    if gt:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Priority", gt.get("priority", "?").upper())
-        c2.metric("Indications", gt.get("indication_count", "?"))
-        c3.metric("Multi-Indication", "✓" if gt.get("is_multi_indication") else "✗")
-        st.caption(f"**GT indications:** {', '.join(gt.get('indications', []))}")
-        st.caption(f"**GT expected actions:** {', '.join(gt.get('expected_actions', []))}")
+def _cond_severity(desc: str) -> str:
+    d = desc.lower()
+    if any(k in d for k in ["ischemic", "coronary", "atrial fibrillat", "bypass", "infarct",
+                              "heart disease", "cardiac arrest", "stroke", "embolism", "history of"]):
+        return "danger"
+    if any(k in d for k in ["obesity", "arthritis", "osteo", "diabetes", "hypertension",
+                              "metabolic", "cancer", "disorder", "abnormal", "disease"]):
+        return "warning"
+    return "neutral"
 
+
+def _obs_val(obs_list: list, *descs) -> str:
+    for desc in descs:
+        for o in obs_list:
+            if desc.lower() in o.get("description", "").lower():
+                val = o.get("value")
+                if val is None:
+                    continue
+                units = (o.get("units") or "").replace("{", "").replace("}", "").strip()
+                formatted = f"{val:g}" if isinstance(val, float) else str(val)
+                return f"{formatted} {units}".strip() if units else formatted
+    return "—"
+
+
+def _fmt_med_date(s: str) -> str:
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).strftime("%b %Y")
+    except Exception:
+        return (s or "")[:7]
+
+
+def _two_col_grid(pairs: list) -> str:
+    left, right = pairs[::2], pairs[1::2]
+    rows = max(len(left), len(right))
+    td_k = 'style="padding:5px 6px 5px 0;font-size:12px;color:#5f6368;white-space:nowrap;vertical-align:top;"'
+    td_v = 'style="padding:5px 12px 5px 0;font-size:12px;color:#1a1a1a;font-weight:500;vertical-align:top;"'
+    html = '<table style="width:100%;border-collapse:collapse;table-layout:fixed;">'
+    for i in range(rows):
+        html += "<tr>"
+        for col in [left, right]:
+            if i < len(col):
+                k, v = col[i]
+                html += f"<td {td_k}>{k}</td><td {td_v}>{v}</td>"
+            else:
+                html += "<td></td><td></td>"
+        html += "</tr>"
+    html += "</table>"
+    return html
+
+
+def render_patient_profile(patient: dict) -> None:
+    pid = patient.get("patient_id", "")
     demo = patient.get("demographics", {})
-    st.caption(f"**Age:** {demo.get('age', '?')} · **Gender:** {demo.get('gender', '?')}")
+    summary = patient.get("summary", {})
+    conditions = patient.get("conditions", [])
+    medications = patient.get("medications", [])
+    observations = patient.get("observations", [])
 
-    with st.expander("Active conditions"):
-        for cond in patient.get("conditions", []):
-            if cond.get("active"):
-                st.markdown(f"- {cond.get('description', cond.get('code', '?'))}")
+    age = demo.get("age", "?")
+    gender = (demo.get("gender") or "?").upper()[0]
+    city = demo.get("city", "")
+    state = demo.get("state", "")
 
-    with st.expander("Current medications"):
-        for med in patient.get("medications", []):
-            st.markdown(f"- {med.get('description', med.get('code', '?'))}")
+    # Last updated = most recent condition start date
+    dates = sorted([c.get("start", "") for c in conditions if c.get("start")], reverse=True)
+    try:
+        from datetime import datetime
+        lu = datetime.fromisoformat(dates[0][:10]).strftime("Updated %b %d, %Y") if dates else ""
+    except Exception:
+        lu = dates[0][:10] if dates else ""
 
-    with st.expander("Full patient bundle"):
-        st.json(patient, expanded=False)
+    survey = [o for o in observations if o.get("category") == "survey"]
+    vitals = [o for o in observations if o.get("category") == "vital-signs"]
+    nullcat = [o for o in observations if o.get("category") is None]
+
+    insurance = _obs_val(survey, "primary insurance")
+    language = _obs_val(survey, "preferred language")
+
+    active_cond_count = summary.get("active_condition_count", sum(1 for c in conditions if c.get("active")))
+    active_med_count = summary.get("active_medication_count", sum(1 for m in medications if m.get("active")))
+    total_obs = summary.get("total_observations", len(observations))
+    qaly = _obs_val(nullcat, "qaly")
+
+    active_conds = [c for c in conditions if c.get("active")]
+
+    seen: set = set()
+    active_meds = []
+    for m in medications:
+        if m.get("active") and m.get("description") not in seen:
+            seen.add(m.get("description"))
+            active_meds.append(m)
+
+    # ── Condition chips ──
+    chip_colors = {
+        "danger":  "background:#fff1f0;color:#cf1322;border:1px solid #ffa39e;",
+        "warning": "background:#fffbe6;color:#874d00;border:1px solid #ffe58f;",
+        "neutral": "background:#f5f5f5;color:#595959;border:1px solid #d9d9d9;",
+    }
+    chip_style_base = ("display:inline-block;padding:3px 10px;border-radius:20px;"
+                       "font-size:11.5px;font-weight:500;margin:2px 3px 2px 0;"
+                       "white-space:nowrap;line-height:1.6;")
+    def _chip(c: dict) -> str:
+        desc = c.get("description", "")
+        sev = _cond_severity(desc)
+        color = chip_colors[sev]
+        return f'<span style="{color}{chip_style_base}">{desc}</span>'
+
+    chips = "".join(_chip(c) for c in active_conds)
+
+    # ── Observation data: all vitals + null-category + survey scores ──
+    _SCORE_KEYWORDS = [
+        "phq-2", "patient health questionnaire",
+        "gad-7", "generalized anxiety",
+        "hark", "fall risk", "stress level",
+    ]
+
+    def _fmt_entry(o: dict) -> tuple:
+        val = o.get("value")
+        if val is None:
+            return (o.get("description", ""), "—")
+        units = (o.get("units") or "").replace("{", "").replace("}", "").strip()
+        formatted = f"{val:g}" if isinstance(val, float) else str(val)
+        value_str = f"{formatted} {units}".strip() if units else formatted
+        return (o.get("description", ""), value_str)
+
+    obs_pairs = (
+        [_fmt_entry(o) for o in vitals]
+        + [_fmt_entry(o) for o in nullcat]
+        + [
+            _fmt_entry(o) for o in survey
+            if any(kw in o.get("description", "").lower() for kw in _SCORE_KEYWORDS)
+        ]
+    )
+
+    # ── Medication grid ──
+    lm, rm = active_meds[::2], active_meds[1::2]
+    med_rows = []
+    for i in range(max(len(lm), len(rm))):
+        row_html = ""
+        for col in [lm, rm]:
+            if i < len(col):
+                m = col[i]
+                name = m.get("description", "—")
+                reason = m.get("reason_description") or ""
+                start = _fmt_med_date(m.get("start") or "")
+                sub = " · ".join(filter(None, [reason, start]))
+                row_html += (
+                    f'<div style="border-left:2px solid #e8eaed;padding:4px 0 4px 10px;'
+                    f'overflow:hidden;">'
+                    f'<div style="font-size:12px;color:#1a1a1a;font-weight:500;'
+                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>'
+                    f'<div style="font-size:11px;color:#5f6368;margin-top:1px;'
+                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{sub}</div>'
+                    f'</div>'
+                )
+            else:
+                row_html += "<div></div>"
+        med_rows.append(row_html)
+    meds_inner = "\n".join(med_rows)
+
+    header_html = f"""
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:4px 2px 4px 2px;">
+
+  <!-- HEADER -->
+  <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:12px;
+              padding:14px 16px;margin-bottom:16px;
+              display:flex;align-items:center;gap:14px;">
+    <div style="width:50px;height:50px;border-radius:50%;flex-shrink:0;
+                background:linear-gradient(135deg,#1a73e8 0%,#4285f4 100%);
+                color:#fff;display:flex;align-items:center;justify-content:center;
+                font-size:13px;font-weight:700;letter-spacing:-0.5px;">{age}{gender}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:14px;font-weight:600;color:#1a1a1a;line-height:1.3;">
+        Patient {pid[:8]}&hellip;</div>
+      <div style="font-size:11.5px;color:#5f6368;margin-top:2px;
+                  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+        {city}, {state}&nbsp;&middot;&nbsp;{insurance}&nbsp;&middot;&nbsp;{language}</div>
+      <div style="font-family:monospace;font-size:10px;color:#b0b8c0;margin-top:3px;
+                  word-break:break-all;line-height:1.4;">{pid}</div>
+    </div>
+    <div style="font-size:10.5px;color:#9aa0a6;white-space:nowrap;
+                flex-shrink:0;text-align:right;line-height:1.5;">{lu}</div>
+  </div>
+
+  <!-- SUMMARY METRICS -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px;">
+    <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:10px;
+                padding:10px 8px;text-align:center;">
+      <div style="font-size:20px;font-weight:700;color:#1a73e8;line-height:1.2;">{active_cond_count}</div>
+      <div style="font-size:10px;color:#5f6368;margin-top:2px;">Conditions</div>
+    </div>
+    <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:10px;
+                padding:10px 8px;text-align:center;">
+      <div style="font-size:20px;font-weight:700;color:#1e8e3e;line-height:1.2;">{active_med_count}</div>
+      <div style="font-size:10px;color:#5f6368;margin-top:2px;">Medications</div>
+    </div>
+    <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:10px;
+                padding:10px 8px;text-align:center;">
+      <div style="font-size:20px;font-weight:700;color:#e37400;line-height:1.2;">{total_obs}</div>
+      <div style="font-size:10px;color:#5f6368;margin-top:2px;">Observations</div>
+    </div>
+    <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:10px;
+                padding:10px 8px;text-align:center;">
+      <div style="font-size:20px;font-weight:700;color:#1a1a1a;line-height:1.2;">{qaly}</div>
+      <div style="font-size:10px;color:#5f6368;margin-top:2px;">QALY</div>
+    </div>
+  </div>
+
+</div>"""
+
+    st.markdown(header_html, unsafe_allow_html=True)
+
+    with st.expander("Active Conditions", expanded=True):
+        st.markdown(
+            f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;'
+            f'line-height:2.2;padding:2px 0 4px 0;">{chips}</div>',
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("Vitals & Scores", expanded=True):
+        rows_html = ""
+        for i, (label, value) in enumerate(obs_pairs):
+            bg = "background:#f8f9fa;" if i % 2 == 0 else ""
+            rows_html += (
+                f'<tr style="{bg}">'
+                f'<td style="padding:5px 12px 5px 4px;font-size:12px;color:#5f6368;'
+                f'width:60%;vertical-align:top;">{label}</td>'
+                f'<td style="padding:5px 4px 5px 0;font-size:12px;color:#1a1a1a;'
+                f'font-weight:500;vertical-align:top;">{value}</td>'
+                f'</tr>'
+            )
+        st.markdown(
+            f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">'
+            f'<table style="width:100%;border-collapse:collapse;">{rows_html}</table></div>',
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("Active Medications", expanded=True):
+        st.markdown(
+            f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;'
+            f'display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">{meds_inner}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_right_pane(session: dict):
@@ -637,7 +856,7 @@ else:
             col_patient, col_trace = st.columns([1, 1])
 
             with col_patient:
-                render_patient_info(patient)
+                render_patient_profile(patient)
 
             with col_trace:
                 st.subheader("Agent Reasoning Trace")
