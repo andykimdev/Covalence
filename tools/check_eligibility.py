@@ -12,7 +12,7 @@ from tools.parse_criteria import parse_criteria
 #load environment variables
 load_dotenv()
 #initialize OpenAI client
-client = OpenAI(base_url=os.getenv("NEBIUS_BASE_URL_TOKENFACTORY", os.getenv("NEBIUS_BASE_URL")), api_key=os.getenv("NEBIUS_API_KEY"))
+client = OpenAI(base_url=os.getenv("NEBIUS_BASE_URL"), api_key=os.getenv("NEBIUS_API_KEY"))
 #set model, default to Llama 3.3 70B Instruct unless specified in environment variables
 MODEL = os.getenv("MODEL_CHECK", "meta-llama/Llama-3.3-70B-Instruct")
 

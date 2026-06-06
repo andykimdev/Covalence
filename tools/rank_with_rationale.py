@@ -8,7 +8,7 @@ from agent.prompts import RANK_WITH_RATIONALE_PROMPT
 from data.load_fixtures import get_trial
 
 load_dotenv()
-client = OpenAI(base_url=os.getenv("NEBIUS_BASE_URL_TOKENFACTORY", os.getenv("NEBIUS_BASE_URL")), api_key=os.getenv("NEBIUS_API_KEY"))
+client = OpenAI(base_url=os.getenv("NEBIUS_BASE_URL"), api_key=os.getenv("NEBIUS_API_KEY"))
 MODEL = os.getenv("MODEL_RANK", "meta-llama/Llama-3.3-70B-Instruct")
 
 
@@ -51,8 +51,9 @@ def rank_with_rationale(patient_id: str, verdict_objects: list[dict]) -> dict:
     scored.sort(key=lambda x: -x["score"])
     top = scored[:3]
 
-    # Step 3: build the LLM input. Include trial titles and conditions so the LLM can write a good rationale
-    # and detect cross-indication matches.
+    # Step 3: build a slim LLM input — omit full criteria_verdicts to reduce output tokens.
+    # We inject verdict_detail back from the original objects after the LLM responds.
+    verdict_lookup = {t["trial_id"]: t["verdict"] for t in top}
     user_message = json.dumps({
         "patient_id": patient_id,
         "top_candidates": [
@@ -61,13 +62,23 @@ def rank_with_rationale(patient_id: str, verdict_objects: list[dict]) -> dict:
                 "title": (get_trial(t["trial_id"]) or {}).get("title", ""),
                 "conditions": (get_trial(t["trial_id"]) or {}).get("conditions", []),
                 "score": t["score"],
-                "verdict": t["verdict"],
+                "pass_count": t["verdict"].get("pass_count", 0),
+                "fail_count": t["verdict"].get("fail_count", 0),
+                "unknown_count": t["verdict"].get("unknown_count", 0),
+                "resolvable_count": t["verdict"].get("resolvable_count", 0),
+                "total_criteria": t["verdict"].get("total_criteria", 0),
+                "overall": t["verdict"].get("overall", "?"),
+                "resolvable_criteria": [
+                    {"criterion": v["criterion"][:100], "rationale": v.get("rationale", "")}
+                    for v in t["verdict"].get("criteria_verdicts", [])
+                    if v.get("resolvable")
+                ],
             }
             for t in top
         ],
     }, indent=2)
 
-    # Step 4: LLM call to write the rationale paragraphs + cross-indication flags
+    # Step 4: LLM call to write rationale + cross-indication flags (no verdict_detail in output).
     try:
         response = client.chat.completions.create(
             model=MODEL,
@@ -76,9 +87,15 @@ def rank_with_rationale(patient_id: str, verdict_objects: list[dict]) -> dict:
                 {"role": "user", "content": user_message},
             ],
             temperature=0.2,
-            max_tokens=4000,
+            max_tokens=2000,
         )
-        return _safe_json_parse(response.choices[0].message.content)
+        result = _safe_json_parse(response.choices[0].message.content)
+        # Inject verdict_detail from original objects so the UI can show per-criterion verdicts.
+        for match in result.get("ranked_matches", []):
+            tid = match.get("trial_id")
+            if tid in verdict_lookup:
+                match["verdict_detail"] = verdict_lookup[tid]
+        return result
     except Exception as e:
         return {"error": f"LLM call failed: {e}", "patient_id": patient_id}
 

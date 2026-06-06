@@ -45,6 +45,15 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
     _search_count = 0
     _eligibility_verdicts: list[dict] = []
 
+    if trace_callback:
+        trace_callback({
+            "type": "pipeline_summary",
+            "inferred_conditions": patient_json.get("inferred_conditions", []),
+            "care_gaps": patient_json.get("care_gaps", []),
+            "expanded_indications": patient_json.get("expanded_indications", []),
+            "all_indications": patient_json.get("all_indications", []),
+        })
+
     for iteration in range(max_iters):
         # Call Nebius (OpenAI-compatible chat completions API) for the next LLM turn
         # Pass in model, messages, tool descriptions, and tool choice (auto means the agent will decide which tool to call)
@@ -120,6 +129,18 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
                     result = _flag_resolvable(result, patient_json.get("care_gaps", []))
                     if "criteria_verdicts" in result:
                         _eligibility_verdicts.append(result)
+                        if trace_callback:
+                            fails = [v for v in result["criteria_verdicts"] if v.get("verdict") == "FAIL"]
+                            resolvable = [v for v in fails if v.get("resolvable")]
+                            trace_callback({
+                                "type": "eligibility_detail",
+                                "trial_id": result.get("trial_id"),
+                                "overall": result.get("overall"),
+                                "pass_count": result.get("pass_count", 0),
+                                "total_criteria": result.get("total_criteria", 0),
+                                "fails": [{"criterion": v["criterion"][:120], "rationale": v.get("rationale", ""), "resolvable": v.get("resolvable", False)} for v in fails],
+                                "resolvable_count": len(resolvable),
+                            })
             except Exception as e:
                 result = {"error": str(e)}
 

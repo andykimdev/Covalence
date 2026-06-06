@@ -40,9 +40,18 @@ def run_benchmark(patients: list[dict]) -> None:
         enriched = enrich_patient_dict(patient)
 
         tool_calls = []
+        tool_timings: dict[str, list[float]] = {}
+        _call_start: dict[str, float] = {}
+
         def trace(event):
-            if event.get("type") == "tool_call":
-                tool_calls.append(event.get("name"))
+            t = event.get("type")
+            name = event.get("name", "")
+            if t == "tool_call":
+                tool_calls.append(name)
+                _call_start[name] = time.time()
+            elif t == "tool_result" and name in _call_start:
+                elapsed_tool = time.time() - _call_start.pop(name)
+                tool_timings.setdefault(name, []).append(elapsed_tool)
 
         start = time.time()
         result = run_agent(enriched, trace_callback=trace)
@@ -56,6 +65,9 @@ def run_benchmark(patients: list[dict]) -> None:
         from collections import Counter
         call_summary = ", ".join(f"{k}×{v}" for k, v in Counter(tool_calls).items())
         print(f"  time: {elapsed:.1f}s  outcome: {outcome}  calls: [{call_summary}]")
+        for name, times in tool_timings.items():
+            avg_t = sum(times) / len(times)
+            print(f"    {name:<25} {avg_t:.1f}s avg  (×{len(times)})")
         results.append({"pid": pid[:8], "elapsed": elapsed, "outcome": outcome})
 
     total_elapsed = time.time() - total_start

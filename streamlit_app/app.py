@@ -19,6 +19,26 @@ from tools.trial_search import build_index
 
 st.set_page_config(page_title="Trial Matching Agent", layout="wide", page_icon="🧬")
 
+st.markdown("""
+    <style>
+        #MainMenu {visibility: hidden;}
+        header[data-testid="stHeader"] {visibility: hidden;}
+        .stDeployButton {display: none;}
+        div[data-testid="stToolbar"] {visibility: hidden;}
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .cov-spinner {
+            display: inline-block;
+            width: 14px; height: 14px;
+            border: 2px solid #ccc;
+            border-top-color: #1a73e8;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 
 # ============================================================
 # LOGO
@@ -42,6 +62,7 @@ def init_fixtures():
 
 
 _STAGES = ["Searching trials", "Parsing criteria", "Checking eligibility", "Validating", "Ranking"]
+_STAGES_PAST = ["Searched trials", "Parsed criteria", "Checked eligibility", "Validated", "Ranked"]
 _TOOL_TO_STAGE = {
     "trial_search": 0,
     "parse_criteria": 1,
@@ -99,25 +120,81 @@ def _plain_english(event: dict) -> str:
 
 def render_progress(trace: list) -> None:
     reached = -1
+    completed = -1
     for event in trace:
         stage = _TOOL_TO_STAGE.get(event.get("name", ""), -1)
         if stage > reached:
             reached = stage
+        if event.get("type") == "tool_result" and stage > completed:
+            completed = stage
 
-    for i, label in enumerate(_STAGES):
-        if i < reached:
-            st.success(f"✓ {label}")
+    for i, (label, past) in enumerate(zip(_STAGES, _STAGES_PAST)):
+        if i <= completed:
+            st.success(f"✓ {past}")
         elif i == reached:
-            st.info(f"▶ {label}")
+            st.markdown(f'<div style="background:#e8f0fe;padding:6px 10px;border-radius:4px;font-size:14px;"><span class="cov-spinner"></span>{label}</div>', unsafe_allow_html=True)
         else:
             st.markdown(f"<span style='color:grey'>○ {label}</span>", unsafe_allow_html=True)
+
+
+def render_pipeline_summary(event: dict):
+    """Render the pre-LLM pipeline context — inferred conditions, care gaps, expanded indications."""
+    inferred = event.get("inferred_conditions", [])
+    gaps = event.get("care_gaps", [])
+    expanded = event.get("expanded_indications", [])
+
+    if not inferred and not gaps and not expanded:
+        return
+
+    with st.expander("Pipeline analysis (Steps 1–4)", expanded=True):
+        if inferred:
+            st.markdown("**Inferred (undiagnosed) conditions**")
+            for ic in inferred:
+                st.markdown(f"- **{ic.get('description', '')}** — {ic.get('evidence', '')} *({ic.get('guideline', '')})*")
+
+        if gaps:
+            st.markdown("**Care gaps (missing guideline medications)**")
+            for g in gaps:
+                st.markdown(f"- **{g.get('condition')}** missing {g.get('missing_drug')} — {g.get('reason', '')} *({g.get('guideline', '')})*")
+
+        if expanded:
+            st.markdown("**Potential developing conditions (comorbidity graph)**")
+            for ei in expanded:
+                conf_color = {"high": "🔴", "medium": "🟡", "low": "⚪"}.get(ei.get("confidence", ""), "⚪")
+                st.markdown(f"- {conf_color} **{ei.get('name')}** score {ei.get('expansion_score')} ({ei.get('confidence')} confidence) — {ei.get('recommendation', '')}")
+
+
+def render_eligibility_detail(event: dict):
+    """Render per-trial fail reasons inline in the trace."""
+    fails = event.get("fails", [])
+    if not fails:
+        return
+    trial_id = event.get("trial_id", "")
+    overall = event.get("overall", "")
+    pass_count = event.get("pass_count", 0)
+    total = event.get("total_criteria", 0)
+    resolvable_count = event.get("resolvable_count", 0)
+
+    icon = {"PASS": "🟢", "FAIL": "🔴", "PARTIAL": "🟡"}.get(overall, "⚪")
+    header = f"{icon} {trial_id} — {pass_count}/{total} PASS"
+    if resolvable_count:
+        header += f", {resolvable_count} resolvable"
+
+    with st.expander(header, expanded=False):
+        for f in fails:
+            prefix = "🔧 FAIL (resolvable)" if f.get("resolvable") else "❌ FAIL"
+            st.markdown(f"**{prefix}:** {f['criterion']}")
+            if f.get("rationale"):
+                st.caption(f["rationale"])
 
 
 def render_event(event: dict):
     t = event.get("type")
     summary = _plain_english(event)
 
-    if t == "agent_thinking":
+    if t == "pipeline_summary":
+        render_pipeline_summary(event)
+    elif t == "agent_thinking":
         content = event.get("content") or ""
         if content.strip():
             with st.expander(f"Agent reasoning (turn {event.get('iter', '?')})", expanded=False):
@@ -126,6 +203,8 @@ def render_event(event: dict):
         st.markdown(f"⟶ {summary}")
     elif t == "tool_result" and summary:
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{summary}", unsafe_allow_html=True)
+    elif t == "eligibility_detail":
+        render_eligibility_detail(event)
     elif t == "final":
         st.success("Analysis complete")
 
@@ -448,7 +527,8 @@ def render_right_pane(session: dict):
                         st.metric("Adjusted", f"{adj_score:.2f}", help="Score if care gaps addressed")
 
                 with c_main:
-                    st.markdown(f"**{match.get('trial_id', '?')}**")
+                    trial_id = match.get('trial_id', '?')
+                    st.markdown(f"**[{trial_id}](https://clinicaltrials.gov/study/{trial_id})**")
                     st.markdown(match.get("title", ""))
 
                     match_pct = match.get("match_pct", "")
@@ -503,8 +583,8 @@ def render_right_pane(session: dict):
             st.info("⊕ Cross-indication matches surfaced")
             for alert in result["cross_indication_alerts"]:
                 st.markdown(
-                    f"- **{alert.get('trial_id', '?')}** "
-                    f"({alert.get('indication', '')}): {alert.get('reason', '')}"
+                    f"- **[{alert.get('trial_id', '?')}](https://clinicaltrials.gov/study/{alert.get('trial_id', '')})**"
+                    f" ({alert.get('indication', '')}): {alert.get('reason', '')}"
                 )
 
 
@@ -833,35 +913,49 @@ else:
                 render_patient_profile(patient)
 
             with col_trace:
+                pipeline_summary_slot = st.empty()
                 st.subheader("Agent Reasoning Trace")
                 progress_slot = st.empty()
                 trace_box = st.container(height=620, border=True)
 
                 if st.session_state.run_for == pid:
                     with trace_box:
-                        with st.spinner("Agent reasoning..."):
+                        st.markdown("*Agent reasoning in progress...*")
+                        _last_event_slot = st.empty()
 
-                            def on_event(event, _session=session, _slot=progress_slot):
-                                _session["trace"].append(event)
-                                with _slot.container():
-                                    render_progress(_session["trace"])
+                        def on_event(event, _session=session, _slot=progress_slot, _last=_last_event_slot, _ps=pipeline_summary_slot):
+                            _session["trace"].append(event)
+                            with _slot.container():
+                                render_progress(_session["trace"])
+                            if event.get("type") == "pipeline_summary":
+                                with _ps.container():
+                                    render_pipeline_summary(event)
+                            else:
                                 render_event(event)
+                            _last.markdown('<span class="cov-spinner"></span><em>Reasoning...</em>', unsafe_allow_html=True)
 
-                            try:
-                                enriched = enrich_patient_dict(patient)
-                                result = run_agent(enriched, trace_callback=on_event)
-                                session["result"] = result
-                            except Exception as e:
-                                session["result"] = {"outcome": "error", "reason": str(e)}
+                        try:
+                            enriched = enrich_patient_dict(patient)
+                            result = run_agent(enriched, trace_callback=on_event)
+                            session["result"] = result
+                            _last_event_slot.empty()
+                        except Exception as e:
+                            session["result"] = {"outcome": "error", "reason": str(e)}
+                            _last_event_slot.empty()
 
                     st.session_state.run_for = None
 
                 else:
+                    pipeline_events = [e for e in session["trace"] if e.get("type") == "pipeline_summary"]
+                    if pipeline_events:
+                        with pipeline_summary_slot.container():
+                            render_pipeline_summary(pipeline_events[0])
                     if session["trace"]:
                         with progress_slot.container():
                             render_progress(session["trace"])
                     with trace_box:
                         for event in session["trace"]:
-                            render_event(event)
+                            if event.get("type") != "pipeline_summary":
+                                render_event(event)
 
             render_right_pane(session)
