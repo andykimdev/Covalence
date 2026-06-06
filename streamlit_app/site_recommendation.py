@@ -140,7 +140,7 @@ def recommend_sites_llm(trial_profile: dict, candidates: list[dict]) -> dict:
 
 
 def render():
-    st.title("🗺 Site Recommendation")
+    st.title("Site Recommendation")
     st.caption("AI-powered recommendation for where to open trial enrollment sites")
 
     mode = st.radio(

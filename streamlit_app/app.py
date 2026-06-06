@@ -4,6 +4,7 @@ Drop into your repo as streamlit_app/app.py
 Run with: streamlit run streamlit_app/app.py
 """
 import base64
+import json
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -11,8 +12,10 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agent.loop import run_agent
-from agent.pipeline import enrich_patient_dict
+from agent.clinical_codes import DISEASE_GRAPH_EDGES, DISEASE_GRAPH_EDGES_RAW
+from agent.pipeline import enrich_patient_dict, match_patient_end_to_end
+from agent.match_engine import covai_assess, covai_care_gaps
+from agent.opportunity_surface import run_opportunity_surface
 from data.load_fixtures import load_all, all_patients, get_ground_truth
 from tools.trial_search import build_index
 
@@ -67,15 +70,12 @@ def init_fixtures():
     build_index()
 
 
-_STAGES = ["Searching trials", "Parsing criteria", "Checking eligibility", "Validating", "Ranking"]
-_STAGES_PAST = ["Searched trials", "Parsed criteria", "Checked eligibility", "Validated", "Ranked"]
-_TOOL_TO_STAGE = {
-    "trial_search": 0,
-    "parse_criteria": 1,
-    "check_eligibility": 2,
-    "validate_verdicts": 3,
-    "rank_with_rationale": 4,
-}
+
+def _tlink(nct_id: str) -> str:
+    """Return a markdown hyperlink to clinicaltrials.gov for an NCT ID."""
+    if not nct_id:
+        return nct_id
+    return f"[{nct_id}](https://clinicaltrials.gov/study/{nct_id})"
 
 
 def _plain_english(event: dict) -> str:
@@ -88,9 +88,9 @@ def _plain_english(event: dict) -> str:
         if name == "trial_search":
             return f"Searching for trials matching: *{args.get('query', '')}*"
         if name == "parse_criteria":
-            return f"Parsing eligibility criteria for **{args.get('trial_id', '')}**"
+            return f"Parsing eligibility criteria for **{_tlink(args.get('trial_id', ''))}**"
         if name == "check_eligibility":
-            return f"Checking patient eligibility for **{args.get('trial_id', '')}**"
+            return f"Checking patient eligibility for **{_tlink(args.get('trial_id', ''))}**"
         if name == "validate_verdicts":
             return "Validating eligibility verdicts for consistency"
         if name == "rank_with_rationale":
@@ -111,7 +111,7 @@ def _plain_english(event: dict) -> str:
             passes = sum(1 for v in verdicts if v.get("verdict") == "PASS")
             total = len(verdicts)
             icon = {"PASS": "🟢", "FAIL": "🔴", "PARTIAL": "🟡"}.get(overall, "⚪")
-            return f"{icon} **{overall}** for {trial_id} — {passes}/{total} criteria met"
+            return f"{icon} **{overall}** for {_tlink(trial_id)} — {passes}/{total} criteria met"
         if name == "validate_verdicts":
             issues = result.get("issues", [])
             if issues:
@@ -124,47 +124,215 @@ def _plain_english(event: dict) -> str:
     return ""
 
 
-def render_progress(trace: list) -> None:
-    reached = -1
-    completed = -1
-    for event in trace:
-        stage = _TOOL_TO_STAGE.get(event.get("name", ""), -1)
-        if stage > reached:
-            reached = stage
-        if event.get("type") == "tool_result" and stage > completed:
-            completed = stage
 
-    for i, (label, past) in enumerate(zip(_STAGES, _STAGES_PAST)):
-        if i <= completed:
-            st.success(f"✓ {past}")
-        elif i == reached:
-            st.markdown(f'<div style="background:#e8f0fe;padding:6px 10px;border-radius:4px;font-size:14px;"><span class="cov-spinner"></span>{label}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f"<span style='color:grey'>○ {label}</span>", unsafe_allow_html=True)
+_GRAPH_NODE_LABELS = {
+    "T2DM":           "Type 2 Diabetes",
+    "CKD":            "Chronic Kidney Disease",
+    "CHF":            "Chronic Heart Failure",
+    "HYPERTENSION":   "Hypertension",
+    "HYPERLIPIDEMIA": "Hyperlipidemia",
+    "OBESITY":        "Obesity",
+    "AFIB":           "Atrial Fibrillation",
+    "ANEMIA":         "Anemia",
+    "COPD":           "COPD",
+    "MDD":            "Major Depressive Disorder",
+}
+
+_RR_LOOKUP = {(s, t): rr for s, t, rr, *_ in DISEASE_GRAPH_EDGES_RAW}
+
+
+def _build_comorbidity_graph_html(expanded: list) -> str:
+    """Return a vis.js HTML string showing the disease-graph subgraph that produced the expanded indications."""
+    if not expanded:
+        return ""
+
+    expanded_map = {ei["name"]: ei for ei in expanded}
+    expanded_names = set(expanded_map)
+
+    rel_edges = [(s, t, w) for s, t, w in DISEASE_GRAPH_EDGES if t in expanded_names]
+    if not rel_edges:
+        return ""
+
+    reachable_targets = {t for _, t, _ in rel_edges}
+    source_ids = {s for s, _, _ in rel_edges}
+
+    nodes = []
+    for sid in source_ids - reachable_targets:
+        label = _GRAPH_NODE_LABELS.get(sid, sid)
+        nodes.append({
+            "id": sid,
+            "label": label,
+            "group": "known",
+            "title": f"<b>{label}</b><br>Known condition",
+        })
+    for nid, ei in expanded_map.items():
+        if nid not in reachable_targets:
+            continue
+        label = _GRAPH_NODE_LABELS.get(nid, nid)
+        score = ei["expansion_score"]
+        conf = ei["confidence"]
+        nodes.append({
+            "id": nid,
+            "label": f"{label}\nscore: {score:.3f}",
+            "group": conf,
+            "title": (
+                f"<b>{label}</b><br>"
+                f"Expansion score: {score:.3f}<br>"
+                f"Confidence: {conf}<br>"
+                f"{ei.get('recommendation', '')}"
+            ),
+        })
+
+    edges = []
+    for s, t, w in rel_edges:
+        rr = _RR_LOOKUP.get((s, t), 0.0)
+        edges.append({
+            "from": s,
+            "to": t,
+            "width": max(1, round(w * 5)),
+            "title": f"Relative Risk: {rr:.2f}",
+        })
+
+    nodes_js = json.dumps(nodes)
+    edges_js = json.dumps(edges)
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{background:#ffffff;overflow:hidden;
+           font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}}
+#net{{width:100%;height:calc(100% - 52px)}}
+#legend{{
+  display:flex;align-items:center;flex-wrap:wrap;gap:10px;
+  padding:5px 10px;font-size:11px;color:#5f6368;
+  border-top:1px solid #e8eaed;min-height:36px;height:auto;
+}}
+.li{{display:flex;align-items:center;gap:4px}}
+.dot{{width:10px;height:10px;border-radius:50%;flex-shrink:0;border:2px solid transparent}}
+</style>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+<div id="net"></div>
+<div id="legend">
+  <b style="color:#1a1a1a">Legend:</b>
+  <span class="li"><span class="dot" style="background:#1a73e8"></span>Known condition</span>
+  <span class="li"><span class="dot" style="background:#fff1f0;border-color:#cf1322"></span>High risk</span>
+  <span class="li"><span class="dot" style="background:#fffbe6;border-color:#d48806"></span>Medium risk</span>
+  <span class="li"><span class="dot" style="background:#f5f5f5;border-color:#8c8c8c"></span>Low risk</span>
+</div>
+<script>
+var container = document.getElementById('net');
+var data = {{
+  nodes: new vis.DataSet({nodes_js}),
+  edges: new vis.DataSet({edges_js}),
+}};
+var options = {{
+  layout: {{
+    hierarchical: {{
+      enabled: true,
+      direction: 'LR',
+      sortMethod: 'directed',
+      levelSeparation: 210,
+      nodeSpacing: 85,
+    }}
+  }},
+  nodes: {{
+    shape: 'ellipse',
+    font: {{
+      size: 12,
+      face: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+      multi: true,
+    }},
+    borderWidth: 2,
+    widthConstraint: {{minimum: 110, maximum: 165}},
+    heightConstraint: {{minimum: 44}},
+  }},
+  edges: {{
+    arrows: {{to: {{enabled: true, scaleFactor: 0.65}}}},
+    smooth: {{type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.5}},
+    color: {{color: '#bec8d3', highlight: '#1a73e8', hover: '#1a73e8'}},
+  }},
+  groups: {{
+    known: {{
+      color: {{
+        background: '#1a73e8', border: '#0d47a1',
+        highlight: {{background: '#4285f4', border: '#1a73e8'}},
+        hover:     {{background: '#4285f4', border: '#1a73e8'}},
+      }},
+      font: {{color: '#ffffff', bold: true}},
+    }},
+    high: {{
+      color: {{
+        background: '#fff1f0', border: '#cf1322',
+        highlight: {{background: '#ffe0de', border: '#cf1322'}},
+        hover:     {{background: '#ffe0de', border: '#cf1322'}},
+      }},
+      font: {{color: '#cf1322'}},
+      shapeProperties: {{borderDashes: [6, 3]}},
+    }},
+    medium: {{
+      color: {{
+        background: '#fffbe6', border: '#d48806',
+        highlight: {{background: '#fff3c0', border: '#d48806'}},
+        hover:     {{background: '#fff3c0', border: '#d48806'}},
+      }},
+      font: {{color: '#874d00'}},
+      shapeProperties: {{borderDashes: [6, 3]}},
+    }},
+    low: {{
+      color: {{
+        background: '#f5f5f5', border: '#8c8c8c',
+        highlight: {{background: '#ebebeb', border: '#595959'}},
+        hover:     {{background: '#ebebeb', border: '#595959'}},
+      }},
+      font: {{color: '#595959'}},
+      shapeProperties: {{borderDashes: [6, 3]}},
+    }},
+  }},
+  physics: {{enabled: false}},
+  interaction: {{hover: true, tooltipDelay: 100, zoomView: false, dragView: false}},
+}};
+window.addEventListener('load', function() {{
+  new vis.Network(container, data, options);
+}});
+</script>
+</body>
+</html>"""
 
 
 def render_pipeline_summary(event: dict):
     """Render the pre-LLM pipeline context — inferred conditions, care gaps, expanded indications."""
     inferred = event.get("inferred_conditions", [])
-    gaps = event.get("care_gaps", [])
+    #gaps = event.get("care_gaps", [])
     expanded = event.get("expanded_indications", [])
 
-    if not inferred and not gaps and not expanded:
+    if not inferred and not expanded:
         return
 
-    with st.expander("Pipeline analysis (Steps 1–4)", expanded=True):
+    with st.expander("Comorbidity Risk Graph Analysis", expanded=True):
         if inferred:
             st.markdown("**Inferred (undiagnosed) conditions**")
             for ic in inferred:
                 st.markdown(f"- **{ic.get('description', '')}** — {ic.get('evidence', '')} *({ic.get('guideline', '')})*")
 
-        if gaps:
-            st.markdown("**Care gaps (missing guideline medications)**")
-            for g in gaps:
-                st.markdown(f"- **{g.get('condition')}** missing {g.get('missing_drug')} — {g.get('reason', '')} *({g.get('guideline', '')})*")
+        # if gaps:
+        #     st.markdown("**Care gaps (missing guideline medications)**")
+        #     for g in gaps:
+        #         st.markdown(f"- **{g.get('condition')}** missing {g.get('missing_drug')} — {g.get('reason', '')} *({g.get('guideline', '')})*")
 
         if expanded:
-            st.markdown("**Potential developing conditions (comorbidity graph)**")
+            graph_html = _build_comorbidity_graph_html(expanded)
+            if graph_html:
+                expanded_names = {ei["name"] for ei in expanded}
+                n_source = len({s for s, t, _ in DISEASE_GRAPH_EDGES if t in expanded_names})
+                n_rows = max(len(expanded), n_source)
+                graph_h = max(220, min(420, n_rows * 85 + 60))
+                components.html(graph_html, height=graph_h + 36, scrolling=False)
+
+            st.markdown("**Potential developing conditions**")
             for ei in expanded:
                 conf_color = {"high": "🔴", "medium": "🟡", "low": "⚪"}.get(ei.get("confidence", ""), "⚪")
                 st.markdown(f"- {conf_color} **{ei.get('name')}** score {ei.get('expansion_score')} ({ei.get('confidence')} confidence) — {ei.get('recommendation', '')}")
@@ -182,7 +350,7 @@ def render_eligibility_detail(event: dict):
     resolvable_count = event.get("resolvable_count", 0)
 
     icon = {"PASS": "🟢", "FAIL": "🔴", "PARTIAL": "🟡"}.get(overall, "⚪")
-    header = f"{icon} {trial_id} — {pass_count}/{total} PASS"
+    header = f"{icon} {_tlink(trial_id)} — {pass_count}/{total} PASS"
     if resolvable_count:
         header += f", {resolvable_count} resolvable"
 
@@ -211,8 +379,86 @@ def render_event(event: dict):
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{summary}", unsafe_allow_html=True)
     elif t == "eligibility_detail":
         render_eligibility_detail(event)
+    elif t == "residual_check_start":
+        tid = event.get("trial_id", "")
+        n = event.get("criteria_count", 0)
+        st.markdown(f"⟶ Checking **{n}** free-text criteria for **{_tlink(tid)}** (LLM)")
+    elif t == "residual_check_result":
+        tid = event.get("trial_id", "")
+        verdicts = event.get("verdicts", [])
+        passes = sum(1 for v in verdicts if v.get("verdict") == "PASS")
+        unknowns = sum(1 for v in verdicts if v.get("verdict") == "UNKNOWN")
+        fails = sum(1 for v in verdicts if v.get("verdict") == "FAIL")
+        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{_tlink(tid)} residual: {passes} PASS · {fails} FAIL · {unknowns} UNKNOWN", unsafe_allow_html=True)
     elif t == "final":
         st.success("Analysis complete")
+
+
+def _adapt_match_result(matches: list[dict]) -> dict:
+    """Convert match_patient_end_to_end list output to the ranked_matches shape the UI expects."""
+    if not matches:
+        return {"outcome": "no_match", "reason": "No trials matched this patient's indication profile."}
+
+    ranked = []
+    for i, r in enumerate(matches[:3]):
+        verdicts = r.get("verdicts", [])
+        overall = "PASS"
+        if any(v["verdict"] == "FAIL" and not v.get("resolvable") for v in verdicts):
+            overall = "FAIL"
+        elif any(v["verdict"] == "UNKNOWN" for v in verdicts):
+            overall = "PARTIAL"
+
+        prov = r.get("provenance", "unknown")
+        weight = r.get("provenance_weight", 1.0)
+        summary = (
+            f"{r['match_pct']} criteria met via {prov} indication (weight {weight:.2f}). "
+            + ("Needs clinician double-check — surfaced via inferred or expanded indication. " if r.get("needs_double_check") else "")
+            + (f"Adjusted match if care gaps addressed: {r['adjusted_match_pct']}." if r.get("adjusted_match_pct") != r.get("match_pct") else "")
+        )
+
+        ranked.append({
+            "rank": i + 1,
+            "trial_id": r["nct_id"],
+            "title": r.get("title", ""),
+            "score": r["score"],
+            "adjusted_score": r.get("adjusted_score"),
+            "match_pct": r.get("match_pct", ""),
+            "adjusted_match_pct": r.get("adjusted_match_pct", ""),
+            "summary": summary,
+            "provenance": prov,
+            "needs_double_check": r.get("needs_double_check", False),
+            "cross_indication": r.get("cross_indication", False),
+            "verdict_detail": {
+                "overall": overall,
+                "criteria_verdicts": verdicts + [
+                    {**rv, "source": "residual"}
+                    for rv in r.get("residual_verdicts", [])
+                ],
+            },
+            "resolvable_criteria": [
+                {
+                    "criterion": v["criterion"],
+                    "care_gap": str(v.get("care_gap", {}).get("missing_drug", "")) if v.get("care_gap") else "",
+                    "action": f"Prescribe {v.get('care_gap', {}).get('missing_drug', 'medication')} — addresses both the care gap and this trial criterion",
+                }
+                for v in verdicts if v.get("resolvable")
+            ],
+        })
+
+    cross_alerts = [
+        {
+            "trial_id": r["nct_id"],
+            "indication": ", ".join(r.get("surfaced_by", [])),
+            "reason": f"Surfaced via {r.get('provenance', 'unknown')} indication — not a documented diagnosis",
+        }
+        for r in matches if r.get("cross_indication")
+    ]
+
+    return {
+        "ranked_matches": ranked,
+        "cross_indication_alerts": cross_alerts,
+        "missing_data_summary": [],
+    }
 
 
 def _classify_outcome(result: dict) -> str:
@@ -561,18 +807,29 @@ def render_right_pane(session: dict):
                                 st.markdown(f"**Care gap:** {rc.get('care_gap', '')}")
                                 st.success(f"Action: {rc.get('action', '')}")
 
-                    with st.expander("Per-criterion verdicts"):
-                        for cv in verdict.get("criteria_verdicts", []):
-                            v = cv.get("verdict", "?")
-                            resolvable_flag = cv.get("resolvable", False)
-                            icon = "🔧" if resolvable_flag else {"PASS": "✅", "FAIL": "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
-                            criterion_text = cv.get("criterion", "")
-                            if len(criterion_text) > 220:
-                                criterion_text = criterion_text[:220] + "..."
-                            label = f"{v} (resolvable)" if resolvable_flag else v
-                            st.markdown(f"{icon} **{label}** — {criterion_text}")
-                            if cv.get("rationale"):
-                                st.caption(cv["rationale"])
+                    with st.expander("Eligibility criteria"):
+                        rows = verdict.get("criteria_verdicts", [])
+                        if rows:
+                            header_cols = st.columns([3, 2, 1])
+                            header_cols[0].markdown("**Trial criterion**")
+                            header_cols[1].markdown("**Patient data**")
+                            header_cols[2].markdown("**Verdict**")
+                            st.divider()
+                            for cv in rows:
+                                v = cv.get("verdict", "?")
+                                resolvable_flag = cv.get("resolvable", False)
+                                is_residual = cv.get("source") == "residual"
+                                icon = {"PASS": "✅", "FAIL": "🔧" if resolvable_flag else "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
+                                criterion_text = cv.get("criterion", "")
+                                if len(criterion_text) > 180:
+                                    criterion_text = criterion_text[:180] + "..."
+                                rationale = cv.get("rationale", "")
+                                patient_data = rationale if rationale else ("LLM assessed" if is_residual else "Data not available")
+                                row_cols = st.columns([3, 2, 1])
+                                row_cols[0].markdown(f"{'*[residual]* ' if is_residual else ''}{criterion_text}")
+                                row_cols[1].markdown(f"<span style='color:{'#888' if v=='UNKNOWN' else 'inherit'}'>{patient_data}</span>", unsafe_allow_html=True)
+                                label = "RESOLVABLE" if resolvable_flag else v
+                                row_cols[2].markdown(f"{icon} {label}")
 
         if result.get("missing_data_summary"):
             st.divider()
@@ -592,6 +849,154 @@ def render_right_pane(session: dict):
                     f"- **[{alert.get('trial_id', '?')}](https://clinicaltrials.gov/study/{alert.get('trial_id', '')})**"
                     f" ({alert.get('indication', '')}): {alert.get('reason', '')}"
                 )
+
+
+def render_opportunity_landscape(session: dict, patient: dict) -> None:
+    enriched = session.get("enriched", {})
+    result = session.get("result") or {}
+
+    has_gaps = bool(enriched.get("care_gaps"))
+    has_trials = bool(result.get("ranked_matches"))
+    if not has_gaps and not has_trials:
+        return
+
+    opportunities = run_opportunity_surface(patient, enriched, result)
+    if not opportunities:
+        return
+
+    st.divider()
+    st.subheader("Patient Opportunity Landscape")
+
+    def _badge(text: str, bg: str, fg: str) -> str:
+        return (
+            f'<span style="background:{bg};color:{fg};padding:2px 9px;border-radius:20px;'
+            f'font-size:11px;font-weight:600;margin-right:4px;display:inline-block;">{text}</span>'
+        )
+
+    def _score_bar(pct: int) -> str:
+        color = "#1e8e3e" if pct >= 90 else ("#f29900" if pct >= 70 else "#9aa0a6")
+        return (
+            f'<div style="background:#efefef;border-radius:4px;height:6px;'
+            f'margin:8px 0 3px 0;width:100%;">'
+            f'<div style="background:{color};width:{pct}%;height:100%;border-radius:4px;"></div>'
+            f'</div>'
+            f'<div style="font-size:11px;color:{color};font-weight:600;">{pct}% match</div>'
+        )
+
+    cols = st.columns(2)
+    for i, op in enumerate(opportunities):
+        with cols[i % 2]:
+            with st.container(border=True):
+                # ── Badges ──
+                badges = ""
+                if op["type"] == "trial":
+                    badges += _badge("Trial", "#f3e8ff", "#6b21a8")
+                else:
+                    badges += _badge("Care gap", "#ccfbf1", "#0f766e")
+                if op["urgent"]:
+                    badges += _badge("Urgent", "#fee2e2", "#b91c1c")
+                if op["linked_id"]:
+                    badges += _badge("Linked", "#fef3c7", "#92400e")
+                st.markdown(badges, unsafe_allow_html=True)
+
+                # ── Title + indication ──
+                op_id = op.get("id", "")
+                if op.get("type") == "trial" and op_id.startswith("NCT"):
+                    st.markdown(f"**[{op['title']}](https://clinicaltrials.gov/study/{op_id})**")
+                else:
+                    st.markdown(f"**{op['title']}**")
+                if op["indication"]:
+                    st.caption(op["indication"])
+
+                # ── Match score bar ──
+                st.markdown(_score_bar(op["match_score"]), unsafe_allow_html=True)
+                st.caption(f"Status: {op['status']}")
+
+                # ── Detail expansion ──
+                with st.expander("Details"):
+                    match_obj = op.get("_match") or {}
+                    all_verdicts = match_obj.get("verdict_detail", {}).get("criteria_verdicts", [])
+
+                    if all_verdicts:
+                        h1, h2, h3 = st.columns([3, 2, 1])
+                        h1.markdown("**Trial criterion**")
+                        h2.markdown("**Patient data**")
+                        h3.markdown("**Verdict**")
+                        st.divider()
+                        trial_id_for_covai = op.get("id", "")
+                        for ci, cv in enumerate(all_verdicts):
+                            v = cv.get("verdict", "?")
+                            is_residual = cv.get("source") == "residual"
+                            resolvable = cv.get("resolvable", False)
+                            icon = {"PASS": "✅", "FAIL": "🔧" if resolvable else "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
+                            criterion_text = cv.get("criterion", "")
+                            if len(criterion_text) > 160:
+                                criterion_text = criterion_text[:160] + "..."
+                            rationale = cv.get("rationale", "")
+                            patient_data = rationale if rationale else ("Not available" if v == "UNKNOWN" else "")
+                            c1, c2, c3 = st.columns([3, 2, 1])
+                            c1.markdown(f"{'*[LLM]* ' if is_residual else ''}{criterion_text}")
+                            c2.caption(patient_data)
+                            if v == "UNKNOWN":
+                                covai_key = f"covai_{trial_id_for_covai}_{ci}"
+                                covai_result = st.session_state.get(covai_key)
+                                if covai_result:
+                                    conf_icon = {"high": "🟢", "medium": "🟡", "low": "⚪"}.get(covai_result.get("confidence"), "⚪")
+                                    c3.markdown(f"{conf_icon} **{covai_result['verdict']}**")
+                                    c2.markdown(f"*CovAI: {covai_result['reasoning']}*")
+                                    if covai_result.get("data_needed"):
+                                        c2.caption(f"To confirm: {covai_result['data_needed']}")
+                                else:
+                                    c3.markdown(f"{icon} UNKNOWN")
+                                    if c3.button("CovAI", key=f"{covai_key}_btn", help="Ask CovAI to reason about this criterion"):
+                                        with st.spinner("CovAI assessing..."):
+                                            st.session_state[covai_key] = covai_assess(
+                                                session.get("enriched", {}),
+                                                cv.get("criterion", ""),
+                                                trial_id_for_covai,
+                                            )
+                                        st.rerun()
+                            else:
+                                c3.markdown(f"{icon} {'RESOLVABLE' if resolvable else v}")
+                    else:
+                        if op["criteria_met"]:
+                            st.markdown("**Criteria met**")
+                            for c in op["criteria_met"][:6]:
+                                st.markdown(f"✅ {c}")
+                        if op["criteria_pending"]:
+                            st.markdown("**Pending / unconfirmed**")
+                            for c in op["criteria_pending"][:4]:
+                                st.markdown(f"⚠️ {c}")
+
+                    if op["action"]:
+                        st.success(f"Action: {op['action']}")
+
+                    if op.get("type") == "care_gap":
+                        covai_gap_key = f"covai_gaps_{session.get('enriched', {}).get('patient_id', 'p')}"
+                        gap_result = st.session_state.get(covai_gap_key)
+                        if gap_result is not None:
+                            if gap_result:
+                                st.markdown("**Additional care gaps identified by CovAI:**")
+                                for g in gap_result:
+                                    st.markdown(
+                                        f"- **{g.get('condition')}** — missing {g.get('missing_therapy')}  \n"
+                                        f"  *{g.get('rationale')}* ({g.get('guideline', '')})"
+                                    )
+                            else:
+                                st.caption("CovAI found no additional care gaps beyond the detected ones.")
+                        if st.button("More possible Care Gaps: CovAI", key=f"{covai_gap_key}_{i}_btn"):
+                            with st.spinner("CovAI screening for additional care gaps..."):
+                                st.session_state[covai_gap_key] = covai_care_gaps(session.get("enriched", {}))
+                            st.rerun()
+
+                    if op["linked_id"] and op["linked_label"]:
+                        tint = "#f3e8ff" if op["type"] == "care_gap" else "#ccfbf1"
+                        st.markdown(
+                            f'<div style="background:{tint};padding:8px 10px;border-radius:6px;'
+                            f'margin-top:8px;font-size:12px;line-height:1.5;">'
+                            f'🔗 <strong>Linked opportunity:</strong> {op["linked_label"]}</div>',
+                            unsafe_allow_html=True,
+                        )
 
 
 # ============================================================
@@ -913,15 +1318,51 @@ else:
             session = st.session_state.patient_sessions[pid]
             patient = session["patient"]
 
+            _close_col, _ = st.columns([1, 11])
+            with _close_col:
+                if st.button("✕ Close", key=f"close_{pid}", use_container_width=True):
+                    st.session_state.open_patients.remove(pid)
+                    del st.session_state.patient_sessions[pid]
+                    if st.session_state.run_for == pid:
+                        st.session_state.run_for = None
+                    st.rerun()
+
             col_patient, col_trace = st.columns([1, 1])
+
+            # ── Landscape slot: created here so it renders below the two columns
+            #    and its reference is available inside the col_trace context below. ──
+            landscape_slot = st.empty()
+
+            # Phase 1: enrich before agent starts so care gap cards appear immediately
+            if st.session_state.run_for == pid and "enriched" not in session:
+                session["enriched"] = enrich_patient_dict(patient)
+
+            # Show whatever is available right now (gap cards if enriched, full if result exists)
+            if session.get("enriched"):
+                with landscape_slot.container():
+                    render_opportunity_landscape(session, patient)
 
             with col_patient:
                 render_patient_profile(patient)
 
             with col_trace:
+                graph_slot = st.empty()
                 pipeline_summary_slot = st.empty()
+
+                if session.get("enriched"):
+                    expanded = session["enriched"].get("expanded_indications", [])
+                    if expanded:
+                        graph_html = _build_comorbidity_graph_html(expanded)
+                        if graph_html:
+                            expanded_names = {ei["name"] for ei in expanded}
+                            n_source = len({s for s, t, _ in DISEASE_GRAPH_EDGES if t in expanded_names})
+                            n_rows = max(len(expanded), n_source)
+                            graph_h = max(200, min(300, n_rows * 90 + 50))
+                            with graph_slot.container():
+                                st.caption("Comorbidity graph — conditions expanded from patient profile ([Bütün et al. 2018](https://link.springer.com/article/10.1007/s41109-018-0101-4))")
+                                components.html(graph_html, height=graph_h, scrolling=False)
+
                 st.subheader("Agent Reasoning Trace")
-                progress_slot = st.empty()
                 trace_box = st.container(height=620, border=True)
 
                 if st.session_state.run_for == pid:
@@ -929,25 +1370,36 @@ else:
                         st.markdown("*Agent reasoning in progress...*")
                         _last_event_slot = st.empty()
 
-                        def on_event(event, _session=session, _slot=progress_slot, _last=_last_event_slot, _ps=pipeline_summary_slot):
+                        def on_event(event, _session=session,
+                                     _last=_last_event_slot, _ps=pipeline_summary_slot,
+                                     _ls=landscape_slot, _patient=patient,
+                                     _gs=graph_slot):
                             _session["trace"].append(event)
-                            with _slot.container():
-                                render_progress(_session["trace"])
                             if event.get("type") == "pipeline_summary":
                                 with _ps.container():
                                     render_pipeline_summary(event)
                             else:
                                 render_event(event)
+                            # Phase 2: trial cards arrive — update landscape (linking not yet resolved)
+                            if (event.get("type") == "tool_result"
+                                    and event.get("name") == "rank_with_rationale"):
+                                _session["result"] = event.get("result", {})
+                                with _ls.container():
+                                    render_opportunity_landscape(_session, _patient)
                             _last.markdown('<span class="cov-spinner"></span><em>Reasoning...</em>', unsafe_allow_html=True)
 
                         try:
-                            enriched = enrich_patient_dict(patient)
-                            result = run_agent(enriched, trace_callback=on_event)
+                            matches = match_patient_end_to_end(session["enriched"], trace_callback=on_event)
+                            result = _adapt_match_result(matches)
                             session["result"] = result
                             _last_event_slot.empty()
                         except Exception as e:
                             session["result"] = {"outcome": "error", "reason": str(e)}
                             _last_event_slot.empty()
+
+                    # Phase 3: final render with linking fully resolved
+                    with landscape_slot.container():
+                        render_opportunity_landscape(session, patient)
 
                     st.session_state.run_for = None
 
@@ -956,12 +1408,7 @@ else:
                     if pipeline_events:
                         with pipeline_summary_slot.container():
                             render_pipeline_summary(pipeline_events[0])
-                    if session["trace"]:
-                        with progress_slot.container():
-                            render_progress(session["trace"])
                     with trace_box:
                         for event in session["trace"]:
                             if event.get("type") != "pipeline_summary":
                                 render_event(event)
-
-            render_right_pane(session)

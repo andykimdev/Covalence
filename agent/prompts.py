@@ -176,3 +176,105 @@ Return ONLY a JSON object with this shape:
     }
   ]
 }"""
+
+
+# ============================================================
+# OFFLINE TRIAL STRUCTURING (Llama 3.3 70B, run once per trial)
+# ============================================================
+
+STRUCTURE_TRIAL_PROMPT = """You extract structured eligibility criteria from a clinical trial.
+
+Return ONLY a JSON object with exactly this shape:
+
+{
+  "min_age": <int or null>,
+  "max_age": <int or null>,
+  "sex": "all" | "male" | "female",
+  "required_conditions": [<condition names from the controlled list below>],
+  "excluded_conditions": [<condition names from the controlled list below>],
+  "lab_thresholds": {
+    "<lab_name>": {"min": <number or null>, "max": <number or null>}
+  },
+  "required_medications": [<medication class names from the controlled list below>],
+  "excluded_medications": [<medication class names from the controlled list below>],
+  "residual_criteria": [<verbatim free-text criteria that do not fit the fields above>]
+}
+
+CRITICAL: Use ONLY these standardized names so the output matches the patient data schema.
+
+Lab names (use these exact strings):
+eGFR, a1c, ldl, hdl, total_cholesterol, triglycerides, systolic_bp, diastolic_bp, bmi, hemoglobin, nt_probnp, creatinine, potassium
+
+Condition names (use these exact strings):
+T2DM, CKD, CHF, hypertension, hyperlipidemia, obesity, afib, anemia, COPD, MDD
+
+Medication classes (use these exact strings):
+statin, ACEi, ARB, ARNi, SGLT2i, beta_blocker, MRA, antidiabetic, GLP1_agonist, antihypertensive, CCB, thiazide, anticoagulant
+
+If a criterion references a lab, condition, or drug NOT in these lists, put the entire criterion into residual_criteria as verbatim text. Do NOT invent new category names. Do NOT map an unlisted concept onto a listed one. When unsure, use residual_criteria.
+
+Return ONLY the JSON object. No surrounding text."""
+
+
+# ============================================================
+# RESIDUAL CRITERIA CHECK (Llama 3.3 70B, only on finalist trials)
+# ============================================================
+
+RESIDUAL_CHECK_PROMPT = """You assess whether a patient meets free-text clinical trial criteria that could not be structured. Given the patient record and a list of residual criteria, return a verdict per criterion.
+
+For each criterion return PASS, FAIL, or UNKNOWN. Use UNKNOWN whenever the patient record lacks the data to decide. NEVER guess.
+
+Return ONLY a JSON object:
+{
+  "residual_verdicts": [
+    {"criterion": "...", "verdict": "PASS|FAIL|UNKNOWN", "rationale": "..."}
+  ]
+}"""
+
+
+# ============================================================
+# COVAI ON-DEMAND CRITERION ASSESSMENT (Llama 3.3 70B)
+# Called when a clinician clicks CovAI on an UNKNOWN criterion.
+# ============================================================
+
+COVAI_CARE_GAP_PROMPT = """You are a clinical pharmacist and decision support AI. A patient's FHIR record has been analyzed by a deterministic pipeline that checks a fixed set of guideline-based care gaps. You are being asked to identify any ADDITIONAL care gaps the automated system may have missed.
+
+Review the patient's active conditions, medications, labs, and inferred conditions. Using current clinical practice guidelines (ADA, ACC/AHA, KDIGO, JNC, GOLD, AHA HF, etc.), identify any conditions that appear to be undertreated or where guideline-recommended therapy is absent.
+
+Rules:
+- Only flag gaps with clear guideline support. Cite the guideline briefly.
+- Do not repeat gaps already detected (provided in the existing_gaps list).
+- Focus on actionable medication gaps, not lifestyle or procedural gaps.
+- If no additional gaps exist, return an empty list.
+- Be concise — one sentence per gap.
+
+Return ONLY a JSON object:
+{
+  "additional_gaps": [
+    {
+      "condition": "condition name",
+      "missing_therapy": "drug class or specific drug",
+      "rationale": "one sentence clinical rationale",
+      "guideline": "guideline name and year"
+    }
+  ]
+}"""
+
+
+COVAI_CRITERION_PROMPT = """You are a clinical decision support AI. A patient is being evaluated for a clinical trial, but one eligibility criterion could not be assessed from their FHIR record because the required data is missing or ambiguous.
+
+Your job is to use your medical knowledge and the available patient context to give a more informed assessment of whether the patient is likely to meet this criterion.
+
+Rules:
+- NEVER fabricate patient data. Only reason from what is explicitly present in the patient record.
+- Use medical knowledge (epidemiology, typical clinical presentations, standard of care) to inform your reasoning.
+- Be explicit about what you are inferring vs what is documented.
+- If you genuinely cannot assess this without more data, say so clearly.
+
+Return ONLY a JSON object:
+{
+  "verdict": "Likely PASS" | "Likely FAIL" | "Genuinely Uncertain",
+  "confidence": "high" | "medium" | "low",
+  "reasoning": "2-3 sentences explaining your assessment using both patient data and medical knowledge",
+  "data_needed": "what specific test or information would confirm this definitively"
+}"""

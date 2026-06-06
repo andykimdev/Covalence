@@ -1,9 +1,7 @@
-"""End-to-end smoke test. Picks a high-priority multi-indication patient and runs the agent."""
+"""End-to-end smoke test. Picks a high-priority multi-indication patient and runs the match engine."""
 import json
 from data.load_fixtures import load_all, all_patients, get_ground_truth
-from tools.trial_search import build_index
-from agent.loop import run_agent
-from agent.pipeline import enrich_patient_dict
+from agent.pipeline import match_patient_end_to_end
 
 
 def pick_test_patient():
@@ -12,39 +10,17 @@ def pick_test_patient():
         gt = get_ground_truth(p["patient_id"])
         if gt and gt.get("priority") == "high" and gt.get("is_multi_indication"):
             return p, gt
-    # Fallback: any multi-indication patient
     for p in all_patients():
         gt = get_ground_truth(p["patient_id"])
         if gt and gt.get("is_multi_indication"):
             return p, gt
-    # Last resort: first patient
     p = all_patients()[0]
     return p, get_ground_truth(p["patient_id"])
-
-
-def make_trace_printer():
-    """Console-friendly trace renderer."""
-    def trace(event):
-        t = event["type"]
-        if t == "agent_thinking":
-            content = event.get("content") or ""
-            print(f"\n[THINK iter={event['iter']}]")
-            print(content[:400])
-        elif t == "tool_call":
-            args_str = json.dumps(event["args"], default=str)[:150]
-            print(f"\n[CALL  iter={event['iter']}] → {event['name']}({args_str})")
-        elif t == "tool_result":
-            result_str = json.dumps(event["result"], default=str)[:250]
-            print(f"[RESULT iter={event['iter']}] ← {result_str}")
-        elif t == "final":
-            print(f"\n[FINAL] {(event.get('content') or '')[:300]}")
-    return trace
 
 
 def main():
     print("Loading fixtures...")
     load_all("v1")
-    build_index()
     print(f"Loaded {len(all_patients())} patients.")
 
     patient, gt = pick_test_patient()
@@ -56,23 +32,28 @@ def main():
     print(f"Expected actions: {gt.get('expected_actions') if gt else 'unknown'}")
     print("=" * 70)
 
-    patient = enrich_patient_dict(patient)
-    result = run_agent(patient, trace_callback=make_trace_printer())
+    results = match_patient_end_to_end(patient)
 
     print("\n" + "=" * 70)
-    print("FINAL RANKED OUTPUT")
+    print("RANKED MATCHES")
     print("=" * 70)
-    print(json.dumps(result, indent=2, default=str)[:3000])
+    print(json.dumps(results[:3], indent=2, default=str)[:3000])
 
     print("\n" + "=" * 70)
     print("EVAL SIGNALS vs GROUND TRUTH")
     print("=" * 70)
-    ranked = result.get("ranked_matches", [])
-    cross = result.get("cross_indication_alerts", [])
-    print(f"Ranked matches returned:        {len(ranked)}")
-    print(f"Cross-indication alerts:        {len(cross)}")
+    cross = [r for r in results if r.get("cross_indication")]
+    needs_check = [r for r in results if r.get("needs_double_check")]
+    print(f"Ranked matches returned:        {len(results)}")
+    print(f"Cross-indication matches:       {len(cross)}")
+    print(f"Needs double-check (inferred/expanded): {len(needs_check)}")
     print(f"GT multi-indication:            {gt.get('is_multi_indication') if gt else 'unknown'}")
-    print(f"Agent detected multi-indication: {len(cross) > 0}")
+    print(f"Engine detected cross-indication: {len(cross) > 0}")
+
+    if results:
+        top = results[0]
+        print(f"\nTop match: {top['nct_id']} score={top['score']} provenance={top['provenance']}")
+        print(f"  Match: {top['match_pct']}  Adjusted: {top['adjusted_match_pct']}")
 
 
 if __name__ == "__main__":
