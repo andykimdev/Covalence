@@ -41,7 +41,9 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
     ]
 
     max_iters = 25
-    #iterate through the agent loop a maximum of 12 times
+    _search_cache: dict[str, dict] = {}
+    _search_count = 0
+
     for iteration in range(max_iters):
         # Call Nebius (OpenAI-compatible chat completions API) for the next LLM turn
         # Pass in model, messages, tool descriptions, and tool choice (auto means the agent will decide which tool to call)
@@ -91,7 +93,19 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
                 })
 
             try:
-                result = execute_tool(tool_call.function.name, args)
+                if tool_call.function.name == "trial_search":
+                    query = args.get("query", "")
+                    if query in _search_cache:
+                        result = _search_cache[query]
+                    else:
+                        _search_count += 1
+                        if _search_count > 3:
+                            result = {"trials": [], "query": query, "note": "search limit reached"}
+                        else:
+                            result = execute_tool(tool_call.function.name, args)
+                            _search_cache[query] = result
+                else:
+                    result = execute_tool(tool_call.function.name, args)
                 if tool_call.function.name == "check_eligibility":
                     result = _flag_resolvable(result, patient_json.get("care_gaps", []))
             except Exception as e:
@@ -119,6 +133,7 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
     return {"outcome": "error", "reason": "Agent reached maximum iterations without producing a result."}
 
 
+
 def _flag_resolvable(verdict: dict, care_gaps: list) -> dict:
     """Annotate check_eligibility results with resolvable flags by matching FAIL criteria against care gaps."""
     if "criteria_verdicts" not in verdict:
@@ -131,6 +146,7 @@ def _flag_resolvable(verdict: dict, care_gaps: list) -> dict:
         else:
             v["resolvable"] = False
     verdict["resolvable_count"] = sum(1 for v in verdict["criteria_verdicts"] if v.get("resolvable"))
+    verdict["total_criteria"] = len(verdict["criteria_verdicts"])
     return verdict
 
 
