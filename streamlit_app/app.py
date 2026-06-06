@@ -4,6 +4,7 @@ Drop into your repo as streamlit_app/app.py
 Run with: streamlit run streamlit_app/app.py
 """
 import base64
+import json
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -11,8 +12,10 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from agent.clinical_codes import DISEASE_GRAPH_EDGES, DISEASE_GRAPH_EDGES_RAW
 from agent.loop import run_agent
 from agent.pipeline import enrich_patient_dict
+from agent.opportunity_surface import run_opportunity_surface
 from data.load_fixtures import load_all, all_patients, get_ground_truth
 from tools.trial_search import build_index
 
@@ -137,28 +140,213 @@ def render_progress(trace: list) -> None:
             st.markdown(f"<span style='color:grey'>○ {label}</span>", unsafe_allow_html=True)
 
 
+_GRAPH_NODE_LABELS = {
+    "T2DM":           "Type 2 Diabetes",
+    "CKD":            "Chronic Kidney Disease",
+    "CHF":            "Chronic Heart Failure",
+    "HYPERTENSION":   "Hypertension",
+    "HYPERLIPIDEMIA": "Hyperlipidemia",
+    "OBESITY":        "Obesity",
+    "AFIB":           "Atrial Fibrillation",
+    "ANEMIA":         "Anemia",
+    "COPD":           "COPD",
+    "MDD":            "Major Depressive Disorder",
+}
+
+_RR_LOOKUP = {(s, t): rr for s, t, rr, *_ in DISEASE_GRAPH_EDGES_RAW}
+
+
+def _build_comorbidity_graph_html(expanded: list) -> str:
+    """Return a vis.js HTML string showing the disease-graph subgraph that produced the expanded indications."""
+    if not expanded:
+        return ""
+
+    expanded_map = {ei["name"]: ei for ei in expanded}
+    expanded_names = set(expanded_map)
+
+    rel_edges = [(s, t, w) for s, t, w in DISEASE_GRAPH_EDGES if t in expanded_names]
+    if not rel_edges:
+        return ""
+
+    reachable_targets = {t for _, t, _ in rel_edges}
+    source_ids = {s for s, _, _ in rel_edges}
+
+    nodes = []
+    for sid in source_ids:
+        label = _GRAPH_NODE_LABELS.get(sid, sid)
+        nodes.append({
+            "id": sid,
+            "label": label,
+            "group": "known",
+            "title": f"<b>{label}</b><br>Known condition",
+        })
+    for nid, ei in expanded_map.items():
+        if nid not in reachable_targets:
+            continue
+        label = _GRAPH_NODE_LABELS.get(nid, nid)
+        score = ei["expansion_score"]
+        conf = ei["confidence"]
+        nodes.append({
+            "id": nid,
+            "label": f"{label}\nscore: {score:.3f}",
+            "group": conf,
+            "title": (
+                f"<b>{label}</b><br>"
+                f"Expansion score: {score:.3f}<br>"
+                f"Confidence: {conf}<br>"
+                f"{ei.get('recommendation', '')}"
+            ),
+        })
+
+    edges = []
+    for s, t, w in rel_edges:
+        rr = _RR_LOOKUP.get((s, t), 0.0)
+        edges.append({
+            "from": s,
+            "to": t,
+            "width": max(1, round(w * 5)),
+            "title": f"Relative Risk: {rr:.2f}",
+        })
+
+    nodes_js = json.dumps(nodes)
+    edges_js = json.dumps(edges)
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{background:#ffffff;overflow:hidden;
+           font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}}
+#net{{width:100%;height:calc(100% - 36px)}}
+#legend{{
+  display:flex;align-items:center;flex-wrap:wrap;gap:10px;
+  padding:5px 10px;font-size:11px;color:#5f6368;
+  border-top:1px solid #e8eaed;height:36px;
+}}
+.li{{display:flex;align-items:center;gap:4px}}
+.dot{{width:10px;height:10px;border-radius:50%;flex-shrink:0;border:2px solid transparent}}
+</style>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+<div id="net"></div>
+<div id="legend">
+  <b style="color:#1a1a1a">Legend:</b>
+  <span class="li"><span class="dot" style="background:#1a73e8"></span>Known condition</span>
+  <span class="li"><span class="dot" style="background:#fff1f0;border-color:#cf1322"></span>High risk</span>
+  <span class="li"><span class="dot" style="background:#fffbe6;border-color:#d48806"></span>Medium risk</span>
+  <span class="li"><span class="dot" style="background:#f5f5f5;border-color:#8c8c8c"></span>Low risk</span>
+  <span style="color:#9aa0a6;margin-left:4px">Edge thickness = relative risk · Score = norm. RR × lab evidence</span>
+</div>
+<script>
+var container = document.getElementById('net');
+var data = {{
+  nodes: new vis.DataSet({nodes_js}),
+  edges: new vis.DataSet({edges_js}),
+}};
+var options = {{
+  layout: {{
+    hierarchical: {{
+      enabled: true,
+      direction: 'LR',
+      sortMethod: 'directed',
+      levelSeparation: 210,
+      nodeSpacing: 85,
+    }}
+  }},
+  nodes: {{
+    shape: 'ellipse',
+    font: {{
+      size: 12,
+      face: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+      multi: true,
+    }},
+    borderWidth: 2,
+    widthConstraint: {{minimum: 110, maximum: 165}},
+    heightConstraint: {{minimum: 44}},
+  }},
+  edges: {{
+    arrows: {{to: {{enabled: true, scaleFactor: 0.65}}}},
+    smooth: {{type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.5}},
+    color: {{color: '#bec8d3', highlight: '#1a73e8', hover: '#1a73e8'}},
+  }},
+  groups: {{
+    known: {{
+      color: {{
+        background: '#1a73e8', border: '#0d47a1',
+        highlight: {{background: '#4285f4', border: '#1a73e8'}},
+        hover:     {{background: '#4285f4', border: '#1a73e8'}},
+      }},
+      font: {{color: '#ffffff', bold: true}},
+    }},
+    high: {{
+      color: {{
+        background: '#fff1f0', border: '#cf1322',
+        highlight: {{background: '#ffe0de', border: '#cf1322'}},
+        hover:     {{background: '#ffe0de', border: '#cf1322'}},
+      }},
+      font: {{color: '#cf1322'}},
+      shapeProperties: {{borderDashes: [6, 3]}},
+    }},
+    medium: {{
+      color: {{
+        background: '#fffbe6', border: '#d48806',
+        highlight: {{background: '#fff3c0', border: '#d48806'}},
+        hover:     {{background: '#fff3c0', border: '#d48806'}},
+      }},
+      font: {{color: '#874d00'}},
+      shapeProperties: {{borderDashes: [6, 3]}},
+    }},
+    low: {{
+      color: {{
+        background: '#f5f5f5', border: '#8c8c8c',
+        highlight: {{background: '#ebebeb', border: '#595959'}},
+        hover:     {{background: '#ebebeb', border: '#595959'}},
+      }},
+      font: {{color: '#595959'}},
+      shapeProperties: {{borderDashes: [6, 3]}},
+    }},
+  }},
+  physics: {{enabled: false}},
+  interaction: {{hover: true, tooltipDelay: 100, zoomView: false, dragView: false}},
+}};
+new vis.Network(container, data, options);
+</script>
+</body>
+</html>"""
+
+
 def render_pipeline_summary(event: dict):
     """Render the pre-LLM pipeline context — inferred conditions, care gaps, expanded indications."""
     inferred = event.get("inferred_conditions", [])
-    gaps = event.get("care_gaps", [])
+    #gaps = event.get("care_gaps", [])
     expanded = event.get("expanded_indications", [])
 
-    if not inferred and not gaps and not expanded:
+    if not inferred and not expanded:
         return
 
-    with st.expander("Pipeline analysis (Steps 1–4)", expanded=True):
+    with st.expander("Comorbidity Risk Graph Analysis", expanded=True):
         if inferred:
             st.markdown("**Inferred (undiagnosed) conditions**")
             for ic in inferred:
                 st.markdown(f"- **{ic.get('description', '')}** — {ic.get('evidence', '')} *({ic.get('guideline', '')})*")
 
-        if gaps:
-            st.markdown("**Care gaps (missing guideline medications)**")
-            for g in gaps:
-                st.markdown(f"- **{g.get('condition')}** missing {g.get('missing_drug')} — {g.get('reason', '')} *({g.get('guideline', '')})*")
+        # if gaps:
+        #     st.markdown("**Care gaps (missing guideline medications)**")
+        #     for g in gaps:
+        #         st.markdown(f"- **{g.get('condition')}** missing {g.get('missing_drug')} — {g.get('reason', '')} *({g.get('guideline', '')})*")
 
         if expanded:
-            st.markdown("**Potential developing conditions (comorbidity graph)**")
+            graph_html = _build_comorbidity_graph_html(expanded)
+            if graph_html:
+                expanded_names = {ei["name"] for ei in expanded}
+                n_source = len({s for s, t, _ in DISEASE_GRAPH_EDGES if t in expanded_names})
+                n_rows = max(len(expanded), n_source)
+                graph_h = max(220, min(420, n_rows * 85 + 60))
+                components.html(graph_html, height=graph_h + 36, scrolling=False)
+
+            st.markdown("**Potential developing conditions**")
             for ei in expanded:
                 conf_color = {"high": "🔴", "medium": "🟡", "low": "⚪"}.get(ei.get("confidence", ""), "⚪")
                 st.markdown(f"- {conf_color} **{ei.get('name')}** score {ei.get('expansion_score')} ({ei.get('confidence')} confidence) — {ei.get('recommendation', '')}")
@@ -588,6 +776,85 @@ def render_right_pane(session: dict):
                 )
 
 
+def render_opportunity_landscape(session: dict, patient: dict) -> None:
+    enriched = session.get("enriched", {})
+    result = session.get("result") or {}
+
+    has_gaps = bool(enriched.get("care_gaps"))
+    has_trials = bool(result.get("ranked_matches"))
+    if not has_gaps and not has_trials:
+        return
+
+    opportunities = run_opportunity_surface(patient, enriched, result)
+    if not opportunities:
+        return
+
+    st.divider()
+    st.subheader("Patient Opportunity Landscape")
+
+    def _badge(text: str, bg: str, fg: str) -> str:
+        return (
+            f'<span style="background:{bg};color:{fg};padding:2px 9px;border-radius:20px;'
+            f'font-size:11px;font-weight:600;margin-right:4px;display:inline-block;">{text}</span>'
+        )
+
+    def _score_bar(pct: int) -> str:
+        color = "#1e8e3e" if pct >= 90 else ("#f29900" if pct >= 70 else "#9aa0a6")
+        return (
+            f'<div style="background:#efefef;border-radius:4px;height:6px;'
+            f'margin:8px 0 3px 0;width:100%;">'
+            f'<div style="background:{color};width:{pct}%;height:100%;border-radius:4px;"></div>'
+            f'</div>'
+            f'<div style="font-size:11px;color:{color};font-weight:600;">{pct}% match</div>'
+        )
+
+    cols = st.columns(2)
+    for i, op in enumerate(opportunities):
+        with cols[i % 2]:
+            with st.container(border=True):
+                # ── Badges ──
+                badges = ""
+                if op["type"] == "trial":
+                    badges += _badge("Trial", "#f3e8ff", "#6b21a8")
+                else:
+                    badges += _badge("Care gap", "#ccfbf1", "#0f766e")
+                if op["urgent"]:
+                    badges += _badge("Urgent", "#fee2e2", "#b91c1c")
+                if op["linked_id"]:
+                    badges += _badge("Linked", "#fef3c7", "#92400e")
+                st.markdown(badges, unsafe_allow_html=True)
+
+                # ── Title + indication ──
+                st.markdown(f"**{op['title']}**")
+                if op["indication"]:
+                    st.caption(op["indication"])
+
+                # ── Match score bar ──
+                st.markdown(_score_bar(op["match_score"]), unsafe_allow_html=True)
+                st.caption(f"Status: {op['status']}")
+
+                # ── Detail expansion ──
+                with st.expander("Details"):
+                    if op["criteria_met"]:
+                        st.markdown("**Criteria met**")
+                        for c in op["criteria_met"][:6]:
+                            st.markdown(f"✅ {c}")
+                    if op["criteria_pending"]:
+                        st.markdown("**Pending / unconfirmed**")
+                        for c in op["criteria_pending"][:4]:
+                            st.markdown(f"⚠️ {c}")
+                    if op["action"]:
+                        st.success(f"Action: {op['action']}")
+                    if op["linked_id"] and op["linked_label"]:
+                        tint = "#f3e8ff" if op["type"] == "care_gap" else "#ccfbf1"
+                        st.markdown(
+                            f'<div style="background:{tint};padding:8px 10px;border-radius:6px;'
+                            f'margin-top:8px;font-size:12px;line-height:1.5;">'
+                            f'🔗 <strong>Linked opportunity:</strong> {op["linked_label"]}</div>',
+                            unsafe_allow_html=True,
+                        )
+
+
 # ============================================================
 # INIT
 # ============================================================
@@ -909,6 +1176,19 @@ else:
 
             col_patient, col_trace = st.columns([1, 1])
 
+            # ── Landscape slot: created here so it renders below the two columns
+            #    and its reference is available inside the col_trace context below. ──
+            landscape_slot = st.empty()
+
+            # Phase 1: enrich before agent starts so care gap cards appear immediately
+            if st.session_state.run_for == pid and "enriched" not in session:
+                session["enriched"] = enrich_patient_dict(patient)
+
+            # Show whatever is available right now (gap cards if enriched, full if result exists)
+            if session.get("enriched"):
+                with landscape_slot.container():
+                    render_opportunity_landscape(session, patient)
+
             with col_patient:
                 render_patient_profile(patient)
 
@@ -923,7 +1203,9 @@ else:
                         st.markdown("*Agent reasoning in progress...*")
                         _last_event_slot = st.empty()
 
-                        def on_event(event, _session=session, _slot=progress_slot, _last=_last_event_slot, _ps=pipeline_summary_slot):
+                        def on_event(event, _session=session, _slot=progress_slot,
+                                     _last=_last_event_slot, _ps=pipeline_summary_slot,
+                                     _ls=landscape_slot, _patient=patient):
                             _session["trace"].append(event)
                             with _slot.container():
                                 render_progress(_session["trace"])
@@ -932,16 +1214,25 @@ else:
                                     render_pipeline_summary(event)
                             else:
                                 render_event(event)
+                            # Phase 2: trial cards arrive — update landscape (linking not yet resolved)
+                            if (event.get("type") == "tool_result"
+                                    and event.get("name") == "rank_with_rationale"):
+                                _session["result"] = event.get("result", {})
+                                with _ls.container():
+                                    render_opportunity_landscape(_session, _patient)
                             _last.markdown('<span class="cov-spinner"></span><em>Reasoning...</em>', unsafe_allow_html=True)
 
                         try:
-                            enriched = enrich_patient_dict(patient)
-                            result = run_agent(enriched, trace_callback=on_event)
+                            result = run_agent(session["enriched"], trace_callback=on_event)
                             session["result"] = result
                             _last_event_slot.empty()
                         except Exception as e:
                             session["result"] = {"outcome": "error", "reason": str(e)}
                             _last_event_slot.empty()
+
+                    # Phase 3: final render with linking fully resolved
+                    with landscape_slot.container():
+                        render_opportunity_landscape(session, patient)
 
                     st.session_state.run_for = None
 
@@ -957,5 +1248,3 @@ else:
                         for event in session["trace"]:
                             if event.get("type") != "pipeline_summary":
                                 render_event(event)
-
-            render_right_pane(session)
