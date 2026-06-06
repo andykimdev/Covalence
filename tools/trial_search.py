@@ -27,9 +27,12 @@ def build_index():
     _bm25 = BM25Okapi(_documents)
 
 
-def trial_search(query: str, top_n: int = 14) -> dict:
+_MAX_RESULTS = 5
+
+def trial_search(query: str, top_n: int = _MAX_RESULTS) -> dict:
     if _bm25 is None:
         build_index()
+    top_n = min(int(top_n), _MAX_RESULTS)
     tokens = query.lower().split()
     scores = _bm25.get_scores(tokens)
     top_indices = sorted(range(len(scores)), key=lambda i: -scores[i])[:top_n]

@@ -19,17 +19,35 @@ MODEL = os.getenv("MODEL_CHECK", "meta-llama/Llama-3.3-70B-Instruct")
 #trim the patient bundle to what check_eligibility actually needs to save on tokens and reduce the size of the input data
 def _trim_patient(patient: dict) -> dict:
     """Reduce patient bundle to what check_eligibility actually needs."""
+    # Group observations by LOINC code sorted oldest-to-newest, then take the
+    # last 3 per code so the LLM can see trends (e.g. eGFR declining over time).
+    from collections import defaultdict
+    obs_by_code: dict[str, list] = defaultdict(list)
+    for obs in sorted(patient.get("observations", []), key=lambda o: o.get("date", "")):
+        code = obs.get("code", "")
+        if code and obs.get("category") in ("laboratory", "vital-signs"):
+            obs_by_code[code].append(obs)
+    recent_obs = []
+    for readings in obs_by_code.values():
+        recent_obs.extend(readings[-3:])
+
     return {
         "patient_id": patient.get("patient_id"),
         "demographics": patient.get("demographics", {}),
-        "summary": patient.get("summary", {}),
         "active_conditions": [c for c in patient.get("conditions", []) if c.get("active")],
         "current_medications": [m for m in patient.get("medications", []) if m.get("active")],
-        "recent_observations": patient.get("observations", [])[-15:],  # last 15
+        "recent_observations": recent_obs,
     }
+
+_eligibility_cache: dict[tuple, dict] = {}
+
 
 #define check_eligibility function to evaluate a patient against a single trial's structured criteria
 def check_eligibility(patient_id: str, trial_id: str) -> dict:
+    cache_key = (patient_id, trial_id)
+    if cache_key in _eligibility_cache:
+        return _eligibility_cache[cache_key]
+
     #get the patient from the patient_search tool
     patient = get_patient(patient_id)
     #if the patient is not found, return an error
@@ -65,13 +83,9 @@ def check_eligibility(patient_id: str, trial_id: str) -> dict:
             temperature=0.0,
             max_tokens=4000,  # cap response length
         )
-        # DEBUG — remove after we figure out what's going on
-        print(f"[DEBUG check_eligibility {trial_id}]")
-        print(f"  finish_reason: {response.choices[0].finish_reason}")
-        print(f"  content: {response.choices[0].message.content!r}")
-        print(f"  tool_calls: {response.choices[0].message.tool_calls}")
-         #parse the response from the Nebius API to a JSON object
+        #parse the response from the Nebius API to a JSON object
         result = _safe_json_parse(response.choices[0].message.content, trial_id)
+        _eligibility_cache[cache_key] = result
         return result
     except Exception as e:
         return {"trial_id": trial_id, "error": f"LLM call failed: {e}"}

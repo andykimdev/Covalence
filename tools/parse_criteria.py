@@ -1,4 +1,4 @@
-import json, os
+import json, os, threading
 from openai import OpenAI
 from dotenv import load_dotenv
 from agent.prompts import PARSE_CRITERIA_PROMPT
@@ -6,10 +6,27 @@ from data.load_fixtures import get_trial
 
 load_dotenv()
 client = OpenAI(base_url=os.getenv("NEBIUS_BASE_URL"), api_key=os.getenv("NEBIUS_API_KEY"))
-MODEL = os.getenv("MODEL_PARSE", "meta-llama/Meta-Llama-3.1-8B-Instruct")
+model = os.getenv("MODEL_PARSE", "meta-llama/Llama-3.3-70B-Instruct")
 
-#define a cache to store the parsed criteria for each trial
-_parse_cache: dict[str, dict] = {}
+_CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "fixtures", "parse_criteria_cache.json")
+_cache_lock = threading.Lock()
+
+def _load_cache() -> dict:
+    """Load persisted parse_criteria results from disk if the cache file exists."""
+    try:
+        with open(_CACHE_PATH, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_cache() -> None:
+    """Persist the in-memory cache to disk so it survives server restarts."""
+    with _cache_lock:
+        snapshot = dict(_parse_cache)
+    with open(_CACHE_PATH, "w") as f:
+        json.dump(snapshot, f, indent=2)
+
+_parse_cache: dict[str, dict] = _load_cache()
 
 
 #define parse_criteria function to parse a trial's raw criteria text into structured inclusion/exclusion lists
@@ -28,7 +45,7 @@ def parse_criteria(trial_id: str) -> dict:
         return {"trial_id": trial_id, "inclusion": [], "exclusion": []}
 
     response = client.chat.completions.create(
-        model=MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": PARSE_CRITERIA_PROMPT},
             {"role": "user", "content": raw_text},
@@ -37,7 +54,9 @@ def parse_criteria(trial_id: str) -> dict:
     )
 
     result = _safe_parse(response.choices[0].message.content, trial_id)
-    _parse_cache[trial_id] = result
+    with _cache_lock:
+        _parse_cache[trial_id] = result
+    save_cache()
     return result
 
 

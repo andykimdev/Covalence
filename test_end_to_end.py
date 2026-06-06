@@ -3,6 +3,7 @@ import json
 from data.load_fixtures import load_all, all_patients, get_ground_truth
 from tools.trial_search import build_index
 from agent.loop import run_agent
+from agent.pipeline import enrich_patient_dict
 
 
 def pick_test_patient():
@@ -55,6 +56,7 @@ def main():
     print(f"Expected actions: {gt.get('expected_actions') if gt else 'unknown'}")
     print("=" * 70)
 
+    patient = enrich_patient_dict(patient)
     result = run_agent(patient, trace_callback=make_trace_printer())
 
     print("\n" + "=" * 70)

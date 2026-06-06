@@ -42,7 +42,13 @@ CRITERION_CHECKS = {
 }
 
 
-def validate_verdicts(patient_id: str, verdict_objects: list[dict]) -> dict:
+def validate_verdicts(patient_id: str, verdict_objects) -> dict:
+    import json
+    if isinstance(verdict_objects, str):
+        try:
+            verdict_objects = json.loads(verdict_objects)
+        except json.JSONDecodeError:
+            return {"validated": False, "issues": [{"error": "verdict_objects could not be parsed as JSON"}]}
     patient = get_patient(patient_id)
     if not patient:
         return {"validated": False, "issues": [{"error": f"patient {patient_id} not found"}]}
