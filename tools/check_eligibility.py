@@ -28,8 +28,15 @@ def _trim_patient(patient: dict) -> dict:
         "recent_observations": patient.get("observations", [])[-15:],  # last 15
     }
 
+_eligibility_cache: dict[tuple, dict] = {}
+
+
 #define check_eligibility function to evaluate a patient against a single trial's structured criteria
 def check_eligibility(patient_id: str, trial_id: str) -> dict:
+    cache_key = (patient_id, trial_id)
+    if cache_key in _eligibility_cache:
+        return _eligibility_cache[cache_key]
+
     #get the patient from the patient_search tool
     patient = get_patient(patient_id)
     #if the patient is not found, return an error
@@ -65,13 +72,9 @@ def check_eligibility(patient_id: str, trial_id: str) -> dict:
             temperature=0.0,
             max_tokens=4000,  # cap response length
         )
-        # DEBUG — remove after we figure out what's going on
-        print(f"[DEBUG check_eligibility {trial_id}]")
-        print(f"  finish_reason: {response.choices[0].finish_reason}")
-        print(f"  content: {response.choices[0].message.content!r}")
-        print(f"  tool_calls: {response.choices[0].message.tool_calls}")
-         #parse the response from the Nebius API to a JSON object
+        #parse the response from the Nebius API to a JSON object
         result = _safe_json_parse(response.choices[0].message.content, trial_id)
+        _eligibility_cache[cache_key] = result
         return result
     except Exception as e:
         return {"trial_id": trial_id, "error": f"LLM call failed: {e}"}

@@ -27,7 +27,7 @@ def build_index():
     _bm25 = BM25Okapi(_documents)
 
 
-_MAX_RESULTS = 10
+_MAX_RESULTS = 5
 
 def trial_search(query: str, top_n: int = _MAX_RESULTS) -> dict:
     if _bm25 is None:
