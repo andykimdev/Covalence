@@ -124,8 +124,12 @@ def match_patient_to_trial(patient: dict, trial: dict) -> list[dict]:
         v = "PASS" if req in patient_codes else "FAIL"
         add(f"requires {req}", v, f"Patient codes: {sorted(patient_codes)}")
     for exc in trial.get("excluded_conditions", []):
-        v = "FAIL" if exc in patient_codes else "PASS"
-        add(f"excludes {exc}", v)
+        if exc in patient_codes:
+            add(f"excludes {exc}", "FAIL", f"Patient has {exc}")
+        else:
+            # Absence from the record is not the same as confirmed absence.
+            # A real physician must rule this out — flag UNKNOWN rather than PASS.
+            add(f"excludes {exc}", "UNKNOWN", f"No confirmed {exc} in record — requires clinical verification")
 
     for lab_name, bounds in trial.get("lab_thresholds", {}).items():
         loinc = LOINC.get(lab_name.upper())
@@ -143,7 +147,11 @@ def match_patient_to_trial(patient: dict, trial: dict) -> list[dict]:
         v = "PASS" if _patient_on_med_class(meds_str, med) else "FAIL"
         add(f"on {med}", v)
     for med in trial.get("excluded_medications", []):
-        v = "FAIL" if _patient_on_med_class(meds_str, med) else "PASS"
+        if _patient_on_med_class(meds_str, med):
+            v = "FAIL"
+        else:
+            # Not currently on it doesn't mean never on it — leave for physician to confirm.
+            v = "UNKNOWN"
         add(f"not on {med}", v)
 
     return verdicts
