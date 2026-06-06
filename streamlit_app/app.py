@@ -16,6 +16,12 @@ from agent.pipeline import enrich_patient_dict
 from data.load_fixtures import load_all, all_patients, get_ground_truth
 from tools.trial_search import build_index
 
+page = st.sidebar.radio("View", ["Patient → Trial Matching", "Site Recommendation"])
+if page == "Site Recommendation":
+    from streamlit_app.site_recommendation import render
+    render()
+    st.stop()
+
 
 st.set_page_config(page_title="Trial Matching Agent", layout="wide", page_icon="🧬")
 
@@ -689,7 +695,7 @@ def _branding_html(logo_b64: str) -> str:
         f"<img class='logo' src='data:image/png;base64,{logo_b64}' alt='Covalence' />"
         if logo_b64 else "<span style='font-size:22px;line-height:1'>🧬</span>"
     )
-    return f"""<!DOCTYPE html>
+    return rf"""<!DOCTYPE html>
 <html>
 <head>
 <style>
