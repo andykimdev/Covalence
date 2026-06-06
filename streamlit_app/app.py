@@ -3,7 +3,6 @@
 Drop into your repo as streamlit_app/app.py
 Run with: streamlit run streamlit_app/app.py
 """
-import json
 import streamlit as st
 
 import sys
@@ -24,10 +23,9 @@ st.set_page_config(page_title="Trial Matching Agent", layout="wide", page_icon="
 # ============================================================
 
 @st.cache_resource(show_spinner="Loading fixtures...")
-def init_fixtures(snapshot: str):
-    load_all(snapshot)
+def init_fixtures():
+    load_all()
     build_index()
-    return snapshot
 
 
 _STAGES = ["Searching trials", "Parsing criteria", "Checking eligibility", "Validating", "Ranking"]
@@ -152,74 +150,15 @@ def patient_label(p: dict) -> str:
     return short
 
 
-# ============================================================
-# SESSION STATE
-# ============================================================
-
-if "snapshot" not in st.session_state:
-    st.session_state.snapshot = "v1"
-if "trace" not in st.session_state:
-    st.session_state.trace = []
-if "result" not in st.session_state:
-    st.session_state.result = None
-
-init_fixtures(st.session_state.snapshot)
+def patient_tab_label(pid: str) -> str:
+    """Short label for a patient tab."""
+    return pid[:8] + "..."
 
 
-# ============================================================
-# UI
-# ============================================================
-
-st.title("🧬 Patient–Trial Matching Agent")
-st.caption("Track 1 · Clinical Decision Support · Pfizer Medical Intelligence sub-track")
-
-
-# ----- SIDEBAR -----
-
-with st.sidebar:
-    st.header("Demo Controls")
-
-    patients = all_patients()
-    selected_patient = st.selectbox(
-        "Patient",
-        options=patients,
-        format_func=patient_label,
-    )
-
-    st.divider()
-
-    new_snapshot = st.radio(
-        "Trial criteria snapshot",
-        options=["v1", "v2"],
-        horizontal=True,
-        help="Toggle to demonstrate continuous re-evaluation when trial criteria evolve.",
-        index=0 if st.session_state.snapshot == "v1" else 1,
-    )
-
-    if new_snapshot != st.session_state.snapshot:
-        st.session_state.snapshot = new_snapshot
-        init_fixtures.clear()
-        init_fixtures(new_snapshot)
-        st.success(f"Loaded {new_snapshot}. Re-run to see updated matches.")
-
-    st.divider()
-
-    run = st.button("🔍 Find Matches", type="primary", use_container_width=True)
-
-    if st.button("🗑 Clear", use_container_width=True):
-        st.session_state.trace = []
-        st.session_state.result = None
-        st.rerun()
-
-
-# ----- MAIN LAYOUT: PATIENT (left) + TRACE (right) -----
-
-col_patient, col_trace = st.columns([1, 1])
-
-with col_patient:
+def render_patient_info(patient: dict):
+    """Render the patient info panel (left column)."""
     st.subheader("Patient")
-
-    gt = get_ground_truth(selected_patient["patient_id"])
+    gt = get_ground_truth(patient["patient_id"])
     if gt:
         c1, c2, c3 = st.columns(3)
         c1.metric("Priority", gt.get("priority", "?").upper())
@@ -228,63 +167,29 @@ with col_patient:
         st.caption(f"**GT indications:** {', '.join(gt.get('indications', []))}")
         st.caption(f"**GT expected actions:** {', '.join(gt.get('expected_actions', []))}")
 
-    demo = selected_patient.get("demographics", {})
+    demo = patient.get("demographics", {})
     st.caption(f"**Age:** {demo.get('age', '?')} · **Gender:** {demo.get('gender', '?')}")
 
     with st.expander("Active conditions"):
-        for cond in selected_patient.get("conditions", []):
+        for cond in patient.get("conditions", []):
             if cond.get("active"):
                 st.markdown(f"- {cond.get('description', cond.get('code', '?'))}")
 
     with st.expander("Current medications"):
-        for med in selected_patient.get("medications", []):
+        for med in patient.get("medications", []):
             st.markdown(f"- {med.get('description', med.get('code', '?'))}")
 
     with st.expander("Full patient bundle"):
-        st.json(selected_patient, expanded=False)
-
-with col_trace:
-    st.subheader("Agent Reasoning Trace")
-    progress_slot = st.empty()
-    trace_box = st.container(height=620, border=True)
+        st.json(patient, expanded=False)
 
 
-# ----- AGENT RUN -----
+def render_right_pane(session: dict):
+    """Render ranked results for a patient session."""
+    result = session.get("result")
+    if not result:
+        return
 
-if run:
-    st.session_state.trace = []
-    st.session_state.result = None
-
-    with trace_box:
-        with st.spinner("Agent reasoning..."):
-
-            def on_event(event):
-                st.session_state.trace.append(event)
-                with progress_slot.container():
-                    render_progress(st.session_state.trace)
-                render_event(event)
-
-            try:
-                enriched = enrich_patient_dict(selected_patient)
-                result = run_agent(enriched, trace_callback=on_event)
-                st.session_state.result = result
-            except Exception as e:
-                st.session_state.result = {"outcome": "error", "reason": str(e)}
-
-elif st.session_state.trace:
-    with progress_slot.container():
-        render_progress(st.session_state.trace)
-    with trace_box:
-        for event in st.session_state.trace:
-            render_event(event)
-
-
-# ----- RANKED OUTPUT -----
-
-if st.session_state.result:
     st.divider()
-    result = st.session_state.result
-
     st.subheader("🎯 Ranked Trial Matches")
 
     outcome = _classify_outcome(result)
@@ -354,7 +259,6 @@ if st.session_state.result:
                             if rationale:
                                 st.caption(rationale)
 
-        # Missing data summary
         if result.get("missing_data_summary"):
             st.divider()
             st.warning("⚠️ Missing data — surface to clinician for next steps")
@@ -366,7 +270,6 @@ if st.session_state.result:
                     line += f" blocks: {blocks_str}"
                 st.markdown(line)
 
-        # Cross-indication alerts
         if result.get("cross_indication_alerts"):
             st.divider()
             st.info("⊕ Cross-indication matches surfaced")
@@ -376,8 +279,103 @@ if st.session_state.result:
                     f"({alert.get('indication', '')}): {alert.get('reason', '')}"
                 )
 
-    elif "final_text" in result:
-        st.markdown(result["final_text"])
 
-    else:
-        st.json(result)
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "open_patients" not in st.session_state:
+    st.session_state.open_patients = []
+if "patient_sessions" not in st.session_state:
+    st.session_state.patient_sessions = {}
+if "run_for" not in st.session_state:
+    st.session_state.run_for = None
+
+init_fixtures()
+
+
+# ============================================================
+# UI
+# ============================================================
+
+st.title("🧬 Patient–Trial Matching Agent")
+st.caption("Track 1 · Clinical Decision Support · Pfizer Medical Intelligence sub-track")
+
+
+# ----- SIDEBAR -----
+
+with st.sidebar:
+    st.header("Demo Controls")
+
+    patients = all_patients()
+    selected_patient = st.selectbox(
+        "Patient",
+        options=patients,
+        format_func=patient_label,
+    )
+
+    st.divider()
+
+    if st.button("🔍 Find Matches", type="primary", use_container_width=True):
+        pid = selected_patient["patient_id"]
+        if pid not in st.session_state.open_patients:
+            st.session_state.open_patients.append(pid)
+        st.session_state.patient_sessions[pid] = {
+            "patient": selected_patient,
+            "trace": [],
+            "result": None,
+        }
+        st.session_state.run_for = pid
+
+
+# ----- MAIN: PATIENT TABS -----
+
+if not st.session_state.open_patients:
+    st.info("Select a patient in the sidebar and click **Find Matches** to open a tab.")
+else:
+    tab_labels = [patient_tab_label(pid) for pid in st.session_state.open_patients]
+    tabs = st.tabs(tab_labels)
+
+    for tab, pid in zip(tabs, st.session_state.open_patients):
+        with tab:
+            session = st.session_state.patient_sessions[pid]
+            patient = session["patient"]
+
+            col_patient, col_trace = st.columns([1, 1])
+
+            with col_patient:
+                render_patient_info(patient)
+
+            with col_trace:
+                st.subheader("Agent Reasoning Trace")
+                progress_slot = st.empty()
+                trace_box = st.container(height=620, border=True)
+
+                if st.session_state.run_for == pid:
+                    with trace_box:
+                        with st.spinner("Agent reasoning..."):
+
+                            def on_event(event, _session=session, _slot=progress_slot):
+                                _session["trace"].append(event)
+                                with _slot.container():
+                                    render_progress(_session["trace"])
+                                render_event(event)
+
+                            try:
+                                enriched = enrich_patient_dict(patient)
+                                result = run_agent(enriched, trace_callback=on_event)
+                                session["result"] = result
+                            except Exception as e:
+                                session["result"] = {"outcome": "error", "reason": str(e)}
+
+                    st.session_state.run_for = None
+
+                else:
+                    if session["trace"]:
+                        with progress_slot.container():
+                            render_progress(session["trace"])
+                    with trace_box:
+                        for event in session["trace"]:
+                            render_event(event)
+
+            render_right_pane(session)
