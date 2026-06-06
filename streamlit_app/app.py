@@ -3,7 +3,9 @@
 Drop into your repo as streamlit_app/app.py
 Run with: streamlit run streamlit_app/app.py
 """
+import base64
 import streamlit as st
+import streamlit.components.v1 as components
 
 import sys
 from pathlib import Path
@@ -16,6 +18,17 @@ from tools.trial_search import build_index
 
 
 st.set_page_config(page_title="Trial Matching Agent", layout="wide", page_icon="🧬")
+
+
+# ============================================================
+# LOGO
+# ============================================================
+
+def _load_logo_b64() -> str:
+    p = Path(__file__).parent / "assets" / "covalence_logo.png"
+    return base64.b64encode(p.read_bytes()).decode() if p.exists() else ""
+
+_LOGO_B64 = _load_logo_b64()
 
 
 # ============================================================
@@ -39,7 +52,6 @@ _TOOL_TO_STAGE = {
 
 
 def _plain_english(event: dict) -> str:
-    """Return a one-sentence plain-English summary of a tool event."""
     name = event.get("name", "")
     args = event.get("args", {})
     result = event.get("result", {})
@@ -86,7 +98,6 @@ def _plain_english(event: dict) -> str:
 
 
 def render_progress(trace: list) -> None:
-    """Render a named stage progress bar based on the tools called so far."""
     reached = -1
     for event in trace:
         stage = _TOOL_TO_STAGE.get(event.get("name", ""), -1)
@@ -104,7 +115,6 @@ def render_progress(trace: list) -> None:
 
 
 def render_event(event: dict):
-    """Render a single trace event as a plain-English summary."""
     t = event.get("type")
     summary = _plain_english(event)
 
@@ -113,19 +123,15 @@ def render_event(event: dict):
         if content.strip():
             with st.expander(f"Agent reasoning (turn {event.get('iter', '?')})", expanded=False):
                 st.markdown(content[:1200])
-
     elif t == "tool_call" and summary:
         st.markdown(f"⟶ {summary}")
-
     elif t == "tool_result" and summary:
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{summary}", unsafe_allow_html=True)
-
     elif t == "final":
         st.success("Analysis complete")
 
 
 def _classify_outcome(result: dict) -> str:
-    """Map a run_agent result to one of three outcome categories."""
     if not result:
         return "error"
     if result.get("outcome") == "no_match":
@@ -141,7 +147,6 @@ def _classify_outcome(result: dict) -> str:
 
 
 def patient_label(p: dict) -> str:
-    """Sidebar dropdown label for a patient."""
     gt = get_ground_truth(p["patient_id"])
     short = p["patient_id"][:8]
     if gt:
@@ -151,40 +156,269 @@ def patient_label(p: dict) -> str:
 
 
 def patient_tab_label(pid: str) -> str:
-    """Short label for a patient tab."""
     return pid[:8] + "..."
 
 
-def render_patient_info(patient: dict):
-    """Render the patient info panel (left column)."""
-    st.subheader("Patient")
-    gt = get_ground_truth(patient["patient_id"])
-    if gt:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Priority", gt.get("priority", "?").upper())
-        c2.metric("Indications", gt.get("indication_count", "?"))
-        c3.metric("Multi-Indication", "✓" if gt.get("is_multi_indication") else "✗")
-        st.caption(f"**GT indications:** {', '.join(gt.get('indications', []))}")
-        st.caption(f"**GT expected actions:** {', '.join(gt.get('expected_actions', []))}")
+def _cond_severity(desc: str) -> str:
+    d = desc.lower()
+    if any(k in d for k in ["ischemic", "coronary", "atrial fibrillat", "bypass", "infarct",
+                              "heart disease", "cardiac arrest", "stroke", "embolism", "history of"]):
+        return "danger"
+    if any(k in d for k in ["obesity", "arthritis", "osteo", "diabetes", "hypertension",
+                              "metabolic", "cancer", "disorder", "abnormal", "disease"]):
+        return "warning"
+    return "neutral"
 
+
+def _obs_val(obs_list: list, *descs) -> str:
+    for desc in descs:
+        for o in obs_list:
+            if desc.lower() in o.get("description", "").lower():
+                val = o.get("value")
+                if val is None:
+                    continue
+                units = (o.get("units") or "").replace("{", "").replace("}", "").strip()
+                formatted = f"{val:g}" if isinstance(val, float) else str(val)
+                return f"{formatted} {units}".strip() if units else formatted
+    return "—"
+
+
+def _fmt_med_date(s: str) -> str:
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).strftime("%b %Y")
+    except Exception:
+        return (s or "")[:7]
+
+
+def _two_col_grid(pairs: list) -> str:
+    left, right = pairs[::2], pairs[1::2]
+    rows = max(len(left), len(right))
+    td_k = 'style="padding:5px 6px 5px 0;font-size:12px;color:#5f6368;white-space:nowrap;vertical-align:top;"'
+    td_v = 'style="padding:5px 12px 5px 0;font-size:12px;color:#1a1a1a;font-weight:500;vertical-align:top;"'
+    html = '<table style="width:100%;border-collapse:collapse;table-layout:fixed;">'
+    for i in range(rows):
+        html += "<tr>"
+        for col in [left, right]:
+            if i < len(col):
+                k, v = col[i]
+                html += f"<td {td_k}>{k}</td><td {td_v}>{v}</td>"
+            else:
+                html += "<td></td><td></td>"
+        html += "</tr>"
+    html += "</table>"
+    return html
+
+
+def render_patient_profile(patient: dict) -> None:
+    pid = patient.get("patient_id", "")
     demo = patient.get("demographics", {})
-    st.caption(f"**Age:** {demo.get('age', '?')} · **Gender:** {demo.get('gender', '?')}")
+    summary = patient.get("summary", {})
+    conditions = patient.get("conditions", [])
+    medications = patient.get("medications", [])
+    observations = patient.get("observations", [])
 
-    with st.expander("Active conditions"):
-        for cond in patient.get("conditions", []):
-            if cond.get("active"):
-                st.markdown(f"- {cond.get('description', cond.get('code', '?'))}")
+    age = demo.get("age", "?")
+    gender = (demo.get("gender") or "?").upper()[0]
+    city = demo.get("city", "")
+    state = demo.get("state", "")
 
-    with st.expander("Current medications"):
-        for med in patient.get("medications", []):
-            st.markdown(f"- {med.get('description', med.get('code', '?'))}")
+    # Last updated = most recent condition start date
+    dates = sorted([c.get("start", "") for c in conditions if c.get("start")], reverse=True)
+    try:
+        from datetime import datetime
+        lu = datetime.fromisoformat(dates[0][:10]).strftime("Updated %b %d, %Y") if dates else ""
+    except Exception:
+        lu = dates[0][:10] if dates else ""
 
-    with st.expander("Full patient bundle"):
-        st.json(patient, expanded=False)
+    survey = [o for o in observations if o.get("category") == "survey"]
+    vitals = [o for o in observations if o.get("category") == "vital-signs"]
+    nullcat = [o for o in observations if o.get("category") is None]
+
+    insurance = _obs_val(survey, "primary insurance")
+    language = _obs_val(survey, "preferred language")
+
+    active_cond_count = summary.get("active_condition_count", sum(1 for c in conditions if c.get("active")))
+    active_med_count = summary.get("active_medication_count", sum(1 for m in medications if m.get("active")))
+    total_obs = summary.get("total_observations", len(observations))
+    qaly = _obs_val(nullcat, "qaly")
+
+    def _cond_order(c: dict) -> int:
+        d = c.get("description", "").lower()
+        if "(finding)" in d:
+            return 0
+        if "(disorder)" in d:
+            return 1
+        if "(situation)" in d:
+            return 2
+        return 3
+
+    active_conds = sorted(
+        [c for c in conditions if c.get("active")],
+        key=_cond_order,
+    )
+
+    seen: set = set()
+    active_meds = []
+    for m in medications:
+        if m.get("active") and m.get("description") not in seen:
+            seen.add(m.get("description"))
+            active_meds.append(m)
+
+    # ── Condition chips ──
+    chip_colors = {
+        "danger":  "background:#fff1f0;color:#cf1322;border:1px solid #ffa39e;",
+        "warning": "background:#fffbe6;color:#874d00;border:1px solid #ffe58f;",
+        "neutral": "background:#f5f5f5;color:#595959;border:1px solid #d9d9d9;",
+    }
+    chip_style_base = ("padding:3px 10px;border-radius:20px;"
+                       "font-size:11.5px;font-weight:500;line-height:1.6;")
+    def _chip(c: dict) -> str:
+        desc = c.get("description", "")
+        sev = _cond_severity(desc)
+        color = chip_colors[sev]
+        return f'<span style="{color}{chip_style_base}">{desc}</span>'
+
+    chips = "".join(_chip(c) for c in active_conds)
+
+    # ── Group observations by category ──
+    _CAT_LABELS = {
+        "vital-signs":    "Vital Signs",
+        "laboratory":     "Laboratory",
+        "exam":           "Exam",
+        "imaging":        "Imaging",
+        "procedure":      "Procedure",
+        "therapy":        "Therapy",
+        "survey":         "Survey",
+        "social-history": "Social History",
+        None:             "Other",
+    }
+    _CAT_ORDER = [
+        "vital-signs", "laboratory", "exam", "imaging",
+        "procedure", "therapy", "survey", "social-history", None,
+    ]
+
+    def _fmt_entry(o: dict) -> tuple:
+        val = o.get("value")
+        if val is None:
+            return (o.get("description", ""), "—")
+        units = (o.get("units") or "").replace("{", "").replace("}", "").strip()
+        formatted = f"{val:g}" if isinstance(val, float) else str(val)
+        value_str = f"{formatted} {units}".strip() if units else formatted
+        return (o.get("description", ""), value_str)
+
+    from collections import defaultdict
+    obs_by_cat: dict = defaultdict(list)
+    for o in observations:
+        obs_by_cat[o.get("category")].append(o)
+
+    # ── Medication list (single column) ──
+    meds_inner = ""
+    for m in active_meds:
+        name = m.get("description", "—")
+        reason = m.get("reason_description") or ""
+        start = _fmt_med_date(m.get("start") or "")
+        sub = " · ".join(filter(None, [reason, start]))
+        meds_inner += (
+            f'<div style="border-left:2px solid #e8eaed;padding:4px 0 4px 10px;">'
+            f'<div style="font-size:12px;color:#1a1a1a;font-weight:500;">{name}</div>'
+            f'<div style="font-size:11px;color:#5f6368;margin-top:1px;">{sub}</div>'
+            f'</div>'
+        )
+
+    header_html = f"""
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:4px 2px 4px 2px;">
+
+  <!-- HEADER -->
+  <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:12px;
+              padding:14px 16px;margin-bottom:16px;
+              display:flex;align-items:center;gap:14px;">
+    <div style="width:50px;height:50px;border-radius:50%;flex-shrink:0;
+                background:linear-gradient(135deg,#1a73e8 0%,#4285f4 100%);
+                color:#fff;display:flex;align-items:center;justify-content:center;
+                font-size:13px;font-weight:700;letter-spacing:-0.5px;">{age}{gender}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:14px;font-weight:600;color:#1a1a1a;line-height:1.3;">
+        Patient {pid[:8]}&hellip;</div>
+      <div style="font-size:11.5px;color:#5f6368;margin-top:2px;
+                  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+        {city}, {state}&nbsp;&middot;&nbsp;{insurance}&nbsp;&middot;&nbsp;{language}</div>
+      <div style="font-family:monospace;font-size:10px;color:#b0b8c0;margin-top:3px;
+                  word-break:break-all;line-height:1.4;">{pid}</div>
+    </div>
+    <div style="font-size:10.5px;color:#9aa0a6;white-space:nowrap;
+                flex-shrink:0;text-align:right;line-height:1.5;">{lu}</div>
+  </div>
+
+  <!-- SUMMARY METRICS -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px;">
+    <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:10px;
+                padding:10px 8px;text-align:center;">
+      <div style="font-size:20px;font-weight:700;color:#1a73e8;line-height:1.2;">{active_cond_count}</div>
+      <div style="font-size:10px;color:#5f6368;margin-top:2px;">Conditions</div>
+    </div>
+    <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:10px;
+                padding:10px 8px;text-align:center;">
+      <div style="font-size:20px;font-weight:700;color:#1e8e3e;line-height:1.2;">{active_med_count}</div>
+      <div style="font-size:10px;color:#5f6368;margin-top:2px;">Medications</div>
+    </div>
+    <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:10px;
+                padding:10px 8px;text-align:center;">
+      <div style="font-size:20px;font-weight:700;color:#e37400;line-height:1.2;">{total_obs}</div>
+      <div style="font-size:10px;color:#5f6368;margin-top:2px;">Observations</div>
+    </div>
+    <div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:10px;
+                padding:10px 8px;text-align:center;">
+      <div style="font-size:20px;font-weight:700;color:#1a1a1a;line-height:1.2;">{qaly}</div>
+      <div style="font-size:10px;color:#5f6368;margin-top:2px;">QALY</div>
+    </div>
+  </div>
+
+</div>"""
+
+    st.markdown(header_html, unsafe_allow_html=True)
+
+    with st.expander("Active Conditions", expanded=True):
+        st.markdown(
+            f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;'
+            f'display:flex;flex-wrap:wrap;gap:5px;padding:2px 0 6px 0;'
+            f'width:100%;box-sizing:border-box;overflow:hidden;">{chips}</div>',
+            unsafe_allow_html=True,
+        )
+
+    for cat_key in _CAT_ORDER:
+        cat_obs = obs_by_cat.get(cat_key, [])
+        if not cat_obs:
+            continue
+        label = _CAT_LABELS[cat_key]
+        pairs = [_fmt_entry(o) for o in cat_obs]
+        rows_html = ""
+        for i, (name, value) in enumerate(pairs):
+            bg = "background:#f8f9fa;" if i % 2 == 0 else ""
+            rows_html += (
+                f'<tr style="{bg}">'
+                f'<td style="padding:5px 12px 5px 4px;font-size:12px;color:#5f6368;'
+                f'width:60%;vertical-align:top;">{name}</td>'
+                f'<td style="padding:5px 12px 5px 4px;font-size:12px;color:#1a1a1a;'
+                f'font-weight:500;vertical-align:top;">{value}</td>'
+                f'</tr>'
+            )
+        with st.expander(label, expanded=False):
+            st.markdown(
+                f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">'
+                f'<table style="width:100%;border-collapse:collapse;">{rows_html}</table></div>',
+                unsafe_allow_html=True,
+            )
+
+    with st.expander("Active Medications", expanded=True):
+        st.markdown(
+            f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;'
+            f'display:flex;flex-direction:column;gap:8px;padding-bottom:12px;">{meds_inner}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_right_pane(session: dict):
-    """Render ranked results for a patient session."""
     result = session.get("result")
     if not result:
         return
@@ -195,10 +429,10 @@ def render_right_pane(session: dict):
     outcome = _classify_outcome(result)
 
     if outcome == "no_match":
-        st.info("No clinical trials matched this patient's indication profile. This may indicate the patient's conditions are too rare, too complex, or insufficiently documented for the current trial corpus.")
+        st.info("No clinical trials matched this patient's indication profile.")
 
     elif outcome == "error":
-        st.warning("The agent was unable to complete trial matching for this patient. This may be due to missing data or an unexpected condition profile. Try selecting a different patient or re-running the analysis.")
+        st.warning("The agent was unable to complete trial matching for this patient.")
 
     elif outcome == "success":
         for match in result["ranked_matches"]:
@@ -246,28 +480,23 @@ def render_right_pane(session: dict):
                         for cv in verdict.get("criteria_verdicts", []):
                             v = cv.get("verdict", "?")
                             resolvable_flag = cv.get("resolvable", False)
-                            if resolvable_flag:
-                                icon = "🔧"
-                            else:
-                                icon = {"PASS": "✅", "FAIL": "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
+                            icon = "🔧" if resolvable_flag else {"PASS": "✅", "FAIL": "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
                             criterion_text = cv.get("criterion", "")
                             if len(criterion_text) > 220:
                                 criterion_text = criterion_text[:220] + "..."
                             label = f"{v} (resolvable)" if resolvable_flag else v
                             st.markdown(f"{icon} **{label}** — {criterion_text}")
-                            rationale = cv.get("rationale", "")
-                            if rationale:
-                                st.caption(rationale)
+                            if cv.get("rationale"):
+                                st.caption(cv["rationale"])
 
         if result.get("missing_data_summary"):
             st.divider()
             st.warning("⚠️ Missing data — surface to clinician for next steps")
             for item in result["missing_data_summary"]:
                 blocks = item.get("blocks_trials", [])
-                blocks_str = ", ".join(blocks) if blocks else ""
                 line = f"- **{item.get('field', '?')}**"
-                if blocks_str:
-                    line += f" blocks: {blocks_str}"
+                if blocks:
+                    line += f" blocks: {', '.join(blocks)}"
                 st.markdown(line)
 
         if result.get("cross_indication_alerts"):
@@ -281,6 +510,15 @@ def render_right_pane(session: dict):
 
 
 # ============================================================
+# INIT
+# ============================================================
+
+init_fixtures()
+patients = all_patients()
+patients_by_id = {p["patient_id"]: p for p in patients}
+
+
+# ============================================================
 # SESSION STATE
 # ============================================================
 
@@ -290,13 +528,249 @@ if "patient_sessions" not in st.session_state:
     st.session_state.patient_sessions = {}
 if "run_for" not in st.session_state:
     st.session_state.run_for = None
+if "sidebar_selected_pid" not in st.session_state:
+    st.session_state.sidebar_selected_pid = (
+        patients[0]["patient_id"] if patients else None
+    )
 
-init_fixtures()
+
+# ============================================================
+# SIDEBAR CSS
+# ============================================================
+
+_SIDEBAR_CSS = """
+<style>
+/* ── Base ── */
+[data-testid="stSidebar"] { background: #ffffff; }
+[data-testid="stSidebarContent"] {
+    padding-top: 0 !important;
+    overflow: hidden !important;
+}
+[data-testid="stSidebarUserContent"] {
+    padding-top: 0 !important;
+    overflow: hidden !important;
+}
+
+/* Kill the flex gap Streamlit puts between every sidebar widget */
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+    gap: 0 !important;
+}
+
+/* Zero out all element-container margins in sidebar */
+[data-testid="stSidebar"] [data-testid="element-container"] {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Completely collapse wrapper divs for hidden trigger buttons
+   (the button itself is display:none but the parent divs still take space) */
+[data-testid="stSidebar"] [data-testid="element-container"]:has(button[data-testid="stBaseButton-primary"]) {
+    display: none !important;
+}
+
+/* All iframes in sidebar: no border */
+[data-testid="stSidebar"] iframe {
+    border: none !important;
+    display: block !important;
+}
+
+/* ── Find Matches button (only secondary button in sidebar) ── */
+[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"] {
+    background: #f0f2f5 !important;
+    border: none !important;
+    border-radius: 22px !important;
+    padding: 9px 20px !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    color: #1a1a1a !important;
+    box-shadow: none !important;
+    outline: none !important;
+    transition: background 0.15s ease !important;
+    justify-content: center !important;
+}
+[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"]:hover {
+    background: #e4e6eb !important;
+}
+
+/* ── Hidden trigger buttons (type="primary"): invisible, zero-size ── */
+/* JS clicks these to communicate patient selection back to Python */
+[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {
+    display: none !important;
+}
+</style>
+"""
+
+
+# ============================================================
+# BRANDING HTML (logo + app name)
+# ============================================================
+
+def _branding_html(logo_b64: str) -> str:
+    logo_tag = (
+        f"<img class='logo' src='data:image/png;base64,{logo_b64}' alt='Covalence' />"
+        if logo_b64 else "<span style='font-size:22px;line-height:1'>🧬</span>"
+    )
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#ffffff;overflow:hidden;
+     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}}
+.row{{display:flex;align-items:center;gap:10px;
+      padding:14px 14px 12px 14px;height:58px}}
+.logo{{width:28px;height:28px;object-fit:contain}}
+.name{{font-size:17px;font-weight:600;color:#0d0d0d;letter-spacing:-0.3px}}
+</style>
+</head>
+<body>
+<div class="row">
+  {logo_tag}
+  <span class="name">Covalence</span>
+</div>
+</body>
+</html>"""
+
+
+# ============================================================
+# PATIENT LIST HTML (rendered in iframe: pure HTML, no Streamlit chrome)
+# ============================================================
+
+def _patient_list_html(patients: list, open_patients: list, selected_pid: str) -> str:
+    items = []
+    for i, p in enumerate(patients):
+        pid = p["patient_id"]
+        raw_label = patient_label(p)
+        label = raw_label.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        data_label = raw_label.replace('"', "&quot;")
+        has_tab = pid in open_patients
+        is_selected = (pid == selected_pid) and not has_tab
+
+        if has_tab:
+            cls = "item disabled"
+            onclick = ""
+        elif is_selected:
+            cls = "item selected"
+            onclick = f'onclick="sel({i})"'
+        else:
+            cls = "item"
+            onclick = f'onclick="sel({i})"'
+
+        items.append(f'<div class="{cls}" data-label="{data_label}" {onclick}>{label}</div>')
+
+    items_html = "\n".join(items)
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{height:100%;width:100%;background:#ffffff;overflow:hidden;
+          font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}}
+.wrap{{display:flex;flex-direction:column;height:100%;overflow:hidden}}
+
+/* ── Search bar ── */
+.search-bar{{
+  display:flex;align-items:center;gap:9px;
+  padding:7px 14px;border-radius:20px;
+  margin:2px 0 24px 0;
+  cursor:text;transition:background 0.15s ease;flex-shrink:0;
+}}
+.search-bar:focus-within{{background:#f0f2f5}}
+.search-icon{{flex-shrink:0;display:flex;align-items:center;color:#888}}
+.search-input{{
+  border:none;outline:none;background:transparent;
+  font-size:13.5px;color:#1a1a1a;flex:1;min-width:0;
+  font-family:inherit;cursor:text;
+}}
+.search-input::placeholder{{color:#888}}
+.clear-btn{{
+  display:none;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;border:none;
+  background:transparent;cursor:pointer;color:#888;
+  font-size:13px;line-height:1;flex-shrink:0;padding:0;
+}}
+.clear-btn:hover{{background:#e0e0e0;color:#444}}
+
+/* ── Patient list ── */
+.scroll{{
+  flex:1;overflow-y:auto;overflow-x:hidden;
+  scrollbar-width:thin;scrollbar-color:#d0d0d0 transparent;
+  padding:2px 0;
+}}
+.scroll::-webkit-scrollbar{{width:4px}}
+.scroll::-webkit-scrollbar-thumb{{background:#d0d0d0;border-radius:4px}}
+.scroll::-webkit-scrollbar-track{{background:transparent}}
+.item{{
+  display:block;width:100%;padding:7px 14px;border-radius:18px;
+  cursor:pointer;font-size:13.5px;font-weight:400;color:#1a1a1a;
+  line-height:1.4;transition:background 0.1s ease;background:transparent;
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  user-select:none;border:none;outline:none;text-align:left;
+}}
+.item:not(.disabled):not(.selected):hover{{background:#f0f2f5}}
+.item.selected{{background:#e2e5e9;font-weight:500;color:#0d0d0d}}
+.item.selected:hover{{background:#d7dce2}}
+.item.disabled{{color:#bbb;cursor:default;pointer-events:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="search-bar" onclick="document.getElementById('q').focus()">
+    <span class="search-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    </span>
+    <input id="q" class="search-input" type="text" placeholder="Search patient"
+           oninput="onSearch()" autocomplete="off" spellcheck="false" />
+    <button id="clr" class="clear-btn" onclick="clearSearch(event)" title="Clear">✕</button>
+  </div>
+  <div class="scroll">
+{items_html}
+  </div>
+</div>
+<script>
+function onSearch() {{
+  var val = document.getElementById('q').value;
+  document.getElementById('clr').style.display = val ? 'flex' : 'none';
+  filter(val);
+}}
+function clearSearch(e) {{
+  e.stopPropagation();
+  var q = document.getElementById('q');
+  q.value = '';
+  document.getElementById('clr').style.display = 'none';
+  filter('');
+  q.focus();
+}}
+function filter(query) {{
+  var tokens = query.trim().toLowerCase().split(/\s+/).filter(function(t){{return t.length>0;}});
+  document.querySelectorAll('.item').forEach(function(el) {{
+    if (!tokens.length) {{ el.style.display=''; return; }}
+    var text = (el.getAttribute('data-label')||el.textContent).toLowerCase();
+    el.style.display = tokens.every(function(tok){{return text.indexOf(tok)>=0;}}) ? '' : 'none';
+  }});
+}}
+function sel(idx) {{
+  var p = window.parent;
+  var triggers = p.document.querySelectorAll(
+    '[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"]'
+  );
+  if (triggers[idx]) triggers[idx].click();
+}}
+</script>
+</body>
+</html>"""
 
 
 # ============================================================
 # UI
 # ============================================================
+
+st.markdown(_SIDEBAR_CSS, unsafe_allow_html=True)
 
 st.title("🧬 Patient–Trial Matching Agent")
 st.caption("Track 1 · Clinical Decision Support · Pfizer Medical Intelligence sub-track")
@@ -305,33 +779,46 @@ st.caption("Track 1 · Clinical Decision Support · Pfizer Medical Intelligence 
 # ----- SIDEBAR -----
 
 with st.sidebar:
-    st.header("Demo Controls")
+    # Branding row
+    components.html(_branding_html(_LOGO_B64), height=58, scrolling=False)
 
-    patients = all_patients()
-    selected_patient = st.selectbox(
-        "Patient",
-        options=patients,
-        format_func=patient_label,
-    )
-
-    st.divider()
-
-    if st.button("🔍 Find Matches", type="primary", use_container_width=True):
-        pid = selected_patient["patient_id"]
-        if pid not in st.session_state.open_patients:
+    # Find Matches pill button
+    if st.button("Find matches", use_container_width=True, key="find_matches_btn"):
+        pid = st.session_state.sidebar_selected_pid
+        if pid and pid not in st.session_state.open_patients:
+            patient = patients_by_id[pid]
             st.session_state.open_patients.append(pid)
-        st.session_state.patient_sessions[pid] = {
-            "patient": selected_patient,
-            "trace": [],
-            "result": None,
-        }
-        st.session_state.run_for = pid
+            st.session_state.patient_sessions[pid] = {
+                "patient": patient,
+                "trace": [],
+                "result": None,
+            }
+            st.session_state.run_for = pid
+
+    # Hidden trigger buttons — one per patient, type="primary" so CSS hides them.
+    # The patient list iframe clicks these via JS to communicate selection to Python.
+    for i, p in enumerate(patients):
+        pid = p["patient_id"]
+        if st.button(" ", key=f"trig_{i}", type="primary", use_container_width=False):
+            st.session_state.sidebar_selected_pid = pid
+            st.rerun()
+
+    # Visible patient list: pure HTML iframe — no Streamlit button chrome at all
+    components.html(
+        _patient_list_html(
+            patients,
+            st.session_state.open_patients,
+            st.session_state.sidebar_selected_pid,
+        ),
+        height=760,
+        scrolling=False,
+    )
 
 
 # ----- MAIN: PATIENT TABS -----
 
 if not st.session_state.open_patients:
-    st.info("Select a patient in the sidebar and click **Find Matches** to open a tab.")
+    st.info("Select a patient in the sidebar and click **Find matches** to open a tab.")
 else:
     tab_labels = [patient_tab_label(pid) for pid in st.session_state.open_patients]
     tabs = st.tabs(tab_labels)
@@ -344,7 +831,7 @@ else:
             col_patient, col_trace = st.columns([1, 1])
 
             with col_patient:
-                render_patient_info(patient)
+                render_patient_profile(patient)
 
             with col_trace:
                 st.subheader("Agent Reasoning Trace")

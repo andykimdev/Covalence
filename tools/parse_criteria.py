@@ -9,6 +9,7 @@ client = OpenAI(base_url=os.getenv("NEBIUS_BASE_URL_STUDIO", os.getenv("NEBIUS_B
 model = os.getenv("MODEL_PARSE", "meta-llama/Llama-3.3-70B-Instruct")
 
 _CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "fixtures", "parse_criteria_cache.json")
+_cache_lock = threading.Lock()
 
 def _load_cache() -> dict:
     """Load persisted parse_criteria results from disk if the cache file exists."""
@@ -20,8 +21,10 @@ def _load_cache() -> dict:
 
 def save_cache() -> None:
     """Persist the in-memory cache to disk so it survives server restarts."""
+    with _cache_lock:
+        snapshot = dict(_parse_cache)
     with open(_CACHE_PATH, "w") as f:
-        json.dump(_parse_cache, f, indent=2)
+        json.dump(snapshot, f, indent=2)
 
 _parse_cache: dict[str, dict] = _load_cache()
 
