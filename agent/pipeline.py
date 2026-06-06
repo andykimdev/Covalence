@@ -96,6 +96,35 @@ def _merge_indications(parsed, inferred, expanded) -> list[str]:
     return sorted(names)
 
 
+def match_patient_end_to_end(
+    bundle: dict,
+    structured_trials_path: str | Path = None,
+    skip_residual: bool = False,
+    trace_callback=None,
+) -> list[dict]:
+    """Run Steps 1-4 enrichment then structured deterministic matching. Returns ranked trials.
+
+    structured_trials_path defaults to fixtures/structured_trials.json relative to the repo root.
+    trace_callback receives residual_check_start and residual_check_result events during LLM checks.
+    """
+    from agent.match_engine import process_patient
+
+    enriched = enrich_patient_dict(bundle)
+
+    if structured_trials_path is None:
+        structured_trials_path = Path(__file__).resolve().parent.parent / "fixtures" / "structured_trials.json"
+
+    with open(Path(structured_trials_path)) as f:
+        structured_trials = json.load(f)
+
+    return process_patient(
+        enriched,
+        structured_trials,
+        skip_residual=skip_residual,
+        trace_callback=trace_callback,
+    )
+
+
 def _write_output(results: list[ExpandedPatient], path: Path) -> None:
     """Serialize pipeline results to JSON so the partner can inspect them offline."""
     output = [

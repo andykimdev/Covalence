@@ -176,3 +176,57 @@ Return ONLY a JSON object with this shape:
     }
   ]
 }"""
+
+
+# ============================================================
+# OFFLINE TRIAL STRUCTURING (Llama 3.3 70B, run once per trial)
+# ============================================================
+
+STRUCTURE_TRIAL_PROMPT = """You extract structured eligibility criteria from a clinical trial.
+
+Return ONLY a JSON object with exactly this shape:
+
+{
+  "min_age": <int or null>,
+  "max_age": <int or null>,
+  "sex": "all" | "male" | "female",
+  "required_conditions": [<condition names from the controlled list below>],
+  "excluded_conditions": [<condition names from the controlled list below>],
+  "lab_thresholds": {
+    "<lab_name>": {"min": <number or null>, "max": <number or null>}
+  },
+  "required_medications": [<medication class names from the controlled list below>],
+  "excluded_medications": [<medication class names from the controlled list below>],
+  "residual_criteria": [<verbatim free-text criteria that do not fit the fields above>]
+}
+
+CRITICAL: Use ONLY these standardized names so the output matches the patient data schema.
+
+Lab names (use these exact strings):
+eGFR, a1c, ldl, hdl, total_cholesterol, triglycerides, systolic_bp, diastolic_bp, bmi, hemoglobin, nt_probnp, creatinine, potassium
+
+Condition names (use these exact strings):
+T2DM, CKD, CHF, hypertension, hyperlipidemia, obesity, afib, anemia, COPD, MDD
+
+Medication classes (use these exact strings):
+statin, ACEi, ARB, ARNi, SGLT2i, beta_blocker, MRA, antidiabetic, GLP1_agonist, antihypertensive, CCB, thiazide, anticoagulant
+
+If a criterion references a lab, condition, or drug NOT in these lists, put the entire criterion into residual_criteria as verbatim text. Do NOT invent new category names. Do NOT map an unlisted concept onto a listed one. When unsure, use residual_criteria.
+
+Return ONLY the JSON object. No surrounding text."""
+
+
+# ============================================================
+# RESIDUAL CRITERIA CHECK (Llama 3.3 70B, only on finalist trials)
+# ============================================================
+
+RESIDUAL_CHECK_PROMPT = """You assess whether a patient meets free-text clinical trial criteria that could not be structured. Given the patient record and a list of residual criteria, return a verdict per criterion.
+
+For each criterion return PASS, FAIL, or UNKNOWN. Use UNKNOWN whenever the patient record lacks the data to decide. NEVER guess.
+
+Return ONLY a JSON object:
+{
+  "residual_verdicts": [
+    {"criterion": "...", "verdict": "PASS|FAIL|UNKNOWN", "rationale": "..."}
+  ]
+}"""

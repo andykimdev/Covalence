@@ -13,8 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.clinical_codes import DISEASE_GRAPH_EDGES, DISEASE_GRAPH_EDGES_RAW
-from agent.loop import run_agent
-from agent.pipeline import enrich_patient_dict
+from agent.pipeline import enrich_patient_dict, match_patient_end_to_end
 from agent.opportunity_surface import run_opportunity_surface
 from data.load_fixtures import load_all, all_patients, get_ground_truth
 from tools.trial_search import build_index
@@ -393,8 +392,86 @@ def render_event(event: dict):
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{summary}", unsafe_allow_html=True)
     elif t == "eligibility_detail":
         render_eligibility_detail(event)
+    elif t == "residual_check_start":
+        tid = event.get("trial_id", "")
+        n = event.get("criteria_count", 0)
+        st.markdown(f"⟶ Checking **{n}** free-text criteria for **{tid}** (LLM)")
+    elif t == "residual_check_result":
+        tid = event.get("trial_id", "")
+        verdicts = event.get("verdicts", [])
+        passes = sum(1 for v in verdicts if v.get("verdict") == "PASS")
+        unknowns = sum(1 for v in verdicts if v.get("verdict") == "UNKNOWN")
+        fails = sum(1 for v in verdicts if v.get("verdict") == "FAIL")
+        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{tid} residual: {passes} PASS · {fails} FAIL · {unknowns} UNKNOWN", unsafe_allow_html=True)
     elif t == "final":
         st.success("Analysis complete")
+
+
+def _adapt_match_result(matches: list[dict]) -> dict:
+    """Convert match_patient_end_to_end list output to the ranked_matches shape the UI expects."""
+    if not matches:
+        return {"outcome": "no_match", "reason": "No trials matched this patient's indication profile."}
+
+    ranked = []
+    for i, r in enumerate(matches[:3]):
+        verdicts = r.get("verdicts", [])
+        overall = "PASS"
+        if any(v["verdict"] == "FAIL" and not v.get("resolvable") for v in verdicts):
+            overall = "FAIL"
+        elif any(v["verdict"] == "UNKNOWN" for v in verdicts):
+            overall = "PARTIAL"
+
+        prov = r.get("provenance", "unknown")
+        weight = r.get("provenance_weight", 1.0)
+        summary = (
+            f"{r['match_pct']} criteria met via {prov} indication (weight {weight:.2f}). "
+            + ("Needs clinician double-check — surfaced via inferred or expanded indication. " if r.get("needs_double_check") else "")
+            + (f"Adjusted match if care gaps addressed: {r['adjusted_match_pct']}." if r.get("adjusted_match_pct") != r.get("match_pct") else "")
+        )
+
+        ranked.append({
+            "rank": i + 1,
+            "trial_id": r["nct_id"],
+            "title": r.get("title", ""),
+            "score": r["score"],
+            "adjusted_score": r.get("adjusted_score"),
+            "match_pct": r.get("match_pct", ""),
+            "adjusted_match_pct": r.get("adjusted_match_pct", ""),
+            "summary": summary,
+            "provenance": prov,
+            "needs_double_check": r.get("needs_double_check", False),
+            "cross_indication": r.get("cross_indication", False),
+            "verdict_detail": {
+                "overall": overall,
+                "criteria_verdicts": verdicts + [
+                    {**rv, "source": "residual"}
+                    for rv in r.get("residual_verdicts", [])
+                ],
+            },
+            "resolvable_criteria": [
+                {
+                    "criterion": v["criterion"],
+                    "care_gap": str(v.get("care_gap", {}).get("missing_drug", "")) if v.get("care_gap") else "",
+                    "action": f"Prescribe {v.get('care_gap', {}).get('missing_drug', 'medication')} — addresses both the care gap and this trial criterion",
+                }
+                for v in verdicts if v.get("resolvable")
+            ],
+        })
+
+    cross_alerts = [
+        {
+            "trial_id": r["nct_id"],
+            "indication": ", ".join(r.get("surfaced_by", [])),
+            "reason": f"Surfaced via {r.get('provenance', 'unknown')} indication — not a documented diagnosis",
+        }
+        for r in matches if r.get("cross_indication")
+    ]
+
+    return {
+        "ranked_matches": ranked,
+        "cross_indication_alerts": cross_alerts,
+        "missing_data_summary": [],
+    }
 
 
 def _classify_outcome(result: dict) -> str:
@@ -743,18 +820,29 @@ def render_right_pane(session: dict):
                                 st.markdown(f"**Care gap:** {rc.get('care_gap', '')}")
                                 st.success(f"Action: {rc.get('action', '')}")
 
-                    with st.expander("Per-criterion verdicts"):
-                        for cv in verdict.get("criteria_verdicts", []):
-                            v = cv.get("verdict", "?")
-                            resolvable_flag = cv.get("resolvable", False)
-                            icon = "🔧" if resolvable_flag else {"PASS": "✅", "FAIL": "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
-                            criterion_text = cv.get("criterion", "")
-                            if len(criterion_text) > 220:
-                                criterion_text = criterion_text[:220] + "..."
-                            label = f"{v} (resolvable)" if resolvable_flag else v
-                            st.markdown(f"{icon} **{label}** — {criterion_text}")
-                            if cv.get("rationale"):
-                                st.caption(cv["rationale"])
+                    with st.expander("Eligibility criteria"):
+                        rows = verdict.get("criteria_verdicts", [])
+                        if rows:
+                            header_cols = st.columns([3, 2, 1])
+                            header_cols[0].markdown("**Trial criterion**")
+                            header_cols[1].markdown("**Patient data**")
+                            header_cols[2].markdown("**Verdict**")
+                            st.divider()
+                            for cv in rows:
+                                v = cv.get("verdict", "?")
+                                resolvable_flag = cv.get("resolvable", False)
+                                is_residual = cv.get("source") == "residual"
+                                icon = {"PASS": "✅", "FAIL": "🔧" if resolvable_flag else "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
+                                criterion_text = cv.get("criterion", "")
+                                if len(criterion_text) > 180:
+                                    criterion_text = criterion_text[:180] + "..."
+                                rationale = cv.get("rationale", "")
+                                patient_data = rationale if rationale else ("LLM assessed" if is_residual else "Data not available")
+                                row_cols = st.columns([3, 2, 1])
+                                row_cols[0].markdown(f"{'*[residual]* ' if is_residual else ''}{criterion_text}")
+                                row_cols[1].markdown(f"<span style='color:{'#888' if v=='UNKNOWN' else 'inherit'}'>{patient_data}</span>", unsafe_allow_html=True)
+                                label = "RESOLVABLE" if resolvable_flag else v
+                                row_cols[2].markdown(f"{icon} {label}")
 
         if result.get("missing_data_summary"):
             st.divider()
@@ -835,14 +923,39 @@ def render_opportunity_landscape(session: dict, patient: dict) -> None:
 
                 # ── Detail expansion ──
                 with st.expander("Details"):
-                    if op["criteria_met"]:
-                        st.markdown("**Criteria met**")
-                        for c in op["criteria_met"][:6]:
-                            st.markdown(f"✅ {c}")
-                    if op["criteria_pending"]:
-                        st.markdown("**Pending / unconfirmed**")
-                        for c in op["criteria_pending"][:4]:
-                            st.markdown(f"⚠️ {c}")
+                    match_obj = op.get("_match") or {}
+                    all_verdicts = match_obj.get("verdict_detail", {}).get("criteria_verdicts", [])
+
+                    if all_verdicts:
+                        h1, h2, h3 = st.columns([3, 2, 1])
+                        h1.markdown("**Trial criterion**")
+                        h2.markdown("**Patient data**")
+                        h3.markdown("**Verdict**")
+                        st.divider()
+                        for cv in all_verdicts:
+                            v = cv.get("verdict", "?")
+                            is_residual = cv.get("source") == "residual"
+                            resolvable = cv.get("resolvable", False)
+                            icon = {"PASS": "✅", "FAIL": "🔧" if resolvable else "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
+                            criterion = cv.get("criterion", "")
+                            if len(criterion) > 160:
+                                criterion = criterion[:160] + "..."
+                            rationale = cv.get("rationale", "")
+                            patient_data = rationale if rationale else ("Not available" if v == "UNKNOWN" else "")
+                            c1, c2, c3 = st.columns([3, 2, 1])
+                            c1.markdown(f"{'*[LLM]* ' if is_residual else ''}{criterion}")
+                            c2.caption(patient_data)
+                            c3.markdown(f"{icon} {'RESOLVABLE' if resolvable else v}")
+                    else:
+                        if op["criteria_met"]:
+                            st.markdown("**Criteria met**")
+                            for c in op["criteria_met"][:6]:
+                                st.markdown(f"✅ {c}")
+                        if op["criteria_pending"]:
+                            st.markdown("**Pending / unconfirmed**")
+                            for c in op["criteria_pending"][:4]:
+                                st.markdown(f"⚠️ {c}")
+
                     if op["action"]:
                         st.success(f"Action: {op['action']}")
                     if op["linked_id"] and op["linked_label"]:
@@ -1223,7 +1336,8 @@ else:
                             _last.markdown('<span class="cov-spinner"></span><em>Reasoning...</em>', unsafe_allow_html=True)
 
                         try:
-                            result = run_agent(session["enriched"], trace_callback=on_event)
+                            matches = match_patient_end_to_end(session["enriched"], trace_callback=on_event)
+                            result = _adapt_match_result(matches)
                             session["result"] = result
                             _last_event_slot.empty()
                         except Exception as e:

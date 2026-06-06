@@ -159,8 +159,5 @@ def run_opportunity_surface(patient: dict, enriched: dict, result: dict) -> list
                 )
                 break
 
-    # Merge: trials first, then care gaps; strip internal _match key
     all_ops = trial_ops + gap_ops
-    for op in all_ops:
-        op.pop("_match", None)
     return all_ops
