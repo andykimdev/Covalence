@@ -40,8 +40,20 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
         {"role": "user", "content": f"Match this patient to relevant trials:\n{json.dumps(patient_json, indent=2)}"},
     ]
 
-    max_iters = 12
-    #iterate through the agent loop a maximum of 12 times
+    max_iters = 25
+    _search_cache: dict[str, dict] = {}
+    _search_count = 0
+    _eligibility_verdicts: list[dict] = []
+
+    if trace_callback:
+        trace_callback({
+            "type": "pipeline_summary",
+            "inferred_conditions": patient_json.get("inferred_conditions", []),
+            "care_gaps": patient_json.get("care_gaps", []),
+            "expanded_indications": patient_json.get("expanded_indications", []),
+            "all_indications": patient_json.get("all_indications", []),
+        })
+
     for iteration in range(max_iters):
         # Call Nebius (OpenAI-compatible chat completions API) for the next LLM turn
         # Pass in model, messages, tool descriptions, and tool choice (auto means the agent will decide which tool to call)
@@ -50,6 +62,8 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
             messages=messages,
             tools=TOOL_SCHEMAS,
             tool_choice="auto",
+            temperature=0.0,
+            parallel_tool_calls=False, #  on nebius, Llama 3.3 doesnt support multi tool call
         )
         # Get the response from the LLM
         msg = response.choices[0].message
@@ -68,10 +82,18 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
         # No tool calls means agent is done
         # The agent is done if it does not need to call any tools to answer the task
         if not msg.tool_calls:
-            # Update the trace callback with the final answer
+            if _eligibility_verdicts:
+                from tools.rank_with_rationale import rank_with_rationale
+                if trace_callback:
+                    trace_callback({"type": "tool_call", "name": "rank_with_rationale", "args": {}, "iter": iteration})
+                result = rank_with_rationale(patient_json.get("patient_id", ""), _eligibility_verdicts)
+                if trace_callback:
+                    trace_callback({"type": "tool_result", "name": "rank_with_rationale", "result": result, "iter": iteration})
+                    trace_callback({"type": "final", "content": None})
+                return result
             if trace_callback:
                 trace_callback({"type": "final", "content": msg.content})
-            return parse_final_output(msg.content)
+            return {"outcome": "no_match", "reason": "Agent completed without finding matching trials."}
 
         # Execute every tool call this turn (parallel if multiple)
         # The agent will call the tools with the arguments provided in the tool call
@@ -90,7 +112,35 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
                 })
 
             try:
-                result = execute_tool(tool_call.function.name, args)
+                if tool_call.function.name == "trial_search":
+                    query = args.get("query", "")
+                    if query in _search_cache:
+                        result = _search_cache[query]
+                    else:
+                        _search_count += 1
+                        if _search_count > 3:
+                            result = {"trials": [], "query": query, "note": "search limit reached"}
+                        else:
+                            result = execute_tool(tool_call.function.name, args)
+                            _search_cache[query] = result
+                else:
+                    result = execute_tool(tool_call.function.name, args)
+                if tool_call.function.name == "check_eligibility":
+                    result = _flag_resolvable(result, patient_json.get("care_gaps", []))
+                    if "criteria_verdicts" in result:
+                        _eligibility_verdicts.append(result)
+                        if trace_callback:
+                            fails = [v for v in result["criteria_verdicts"] if v.get("verdict") == "FAIL"]
+                            resolvable = [v for v in fails if v.get("resolvable")]
+                            trace_callback({
+                                "type": "eligibility_detail",
+                                "trial_id": result.get("trial_id"),
+                                "overall": result.get("overall"),
+                                "pass_count": result.get("pass_count", 0),
+                                "total_criteria": result.get("total_criteria", 0),
+                                "fails": [{"criterion": v["criterion"][:120], "rationale": v.get("rationale", ""), "resolvable": v.get("resolvable", False)} for v in fails],
+                                "resolvable_count": len(resolvable),
+                            })
             except Exception as e:
                 result = {"error": str(e)}
 
@@ -108,7 +158,29 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
                 "content": json.dumps(result),
             })
 
-    return {"error": "max iterations reached", "messages": messages}
+            if tool_call.function.name == "rank_with_rationale" and "ranked_matches" in result:
+                if trace_callback:
+                    trace_callback({"type": "final", "content": None})
+                return result
+
+    return {"outcome": "error", "reason": "Agent reached maximum iterations without producing a result."}
+
+
+
+def _flag_resolvable(verdict: dict, care_gaps: list) -> dict:
+    """Annotate check_eligibility results with resolvable flags by matching FAIL criteria against care gaps."""
+    if "criteria_verdicts" not in verdict:
+        return verdict
+    gap_drugs = {g["missing_drug"].lower() for g in care_gaps}
+    for v in verdict["criteria_verdicts"]:
+        if v["verdict"] == "FAIL":
+            criterion_lower = v["criterion"].lower()
+            v["resolvable"] = any(drug in criterion_lower for drug in gap_drugs)
+        else:
+            v["resolvable"] = False
+    verdict["resolvable_count"] = sum(1 for v in verdict["criteria_verdicts"] if v.get("resolvable"))
+    verdict["total_criteria"] = len(verdict["criteria_verdicts"])
+    return verdict
 
 
 def parse_final_output(content: str) -> dict:

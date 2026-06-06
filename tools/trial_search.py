@@ -1,59 +1,54 @@
-"""BM25 retrieval over the local trial corpus. No LLM, no API calls."""
-import json
-import os
-from pathlib import Path
+"""BM25 retrieval over the local trial corpus."""
 from rank_bm25 import BM25Okapi
+from data.load_fixtures import all_trials, get_trial as _get_trial
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
-
-# Module-level state: load once at import, used by all calls
-_trials: list[dict] = []
 _documents: list[list[str]] = []
+_trial_ids: list[str] = []
 _bm25: BM25Okapi | None = None
-_active_snapshot: str = "v1"
 
 
-def load_trials(snapshot: str = "v1"):
-    """Load trial fixtures from JSON and rebuild the BM25 index. Call this at app startup."""
-    global _trials, _documents, _bm25, _active_snapshot
-    path = FIXTURES_DIR / f"trials_{snapshot}.json"
-    with open(path) as f:
-        _trials = json.load(f)
+def build_index():
+    """Build BM25 index from currently loaded trials. Call after load_all()."""
+    global _documents, _trial_ids, _bm25
     _documents = []
-    for trial in _trials:
-        doc = " ".join([
+    _trial_ids = []
+    for trial in all_trials():
+        doc_parts = [
             trial.get("title", ""),
-            " ".join(trial.get("inclusion_criteria", [])),
-            " ".join(trial.get("exclusion_criteria", [])),
-            " ".join(trial.get("indication_tags", [])),
-        ])
-        _documents.append(doc.lower().split())
+            trial.get("official_title", ""),
+            " ".join(trial.get("conditions", [])),
+            " ".join(trial.get("keywords", [])),
+            trial.get("brief_summary", ""),
+            trial.get("eligibility_text", ""),
+        ]
+        doc = " ".join(doc_parts).lower().split()
+        _documents.append(doc)
+        _trial_ids.append(trial["nct_id"])
     _bm25 = BM25Okapi(_documents)
-    _active_snapshot = snapshot
 
 
-def get_trial(trial_id: str) -> dict | None:
-    """Look up one trial by NCT ID."""
-    for trial in _trials:
-        if trial["nct_id"] == trial_id:
-            return trial
-    return None
+_MAX_RESULTS = 5
 
-
-def trial_search(query: str, top_n: int = 14) -> dict:
-    """Return the top N trial IDs by BM25 score against the query."""
+def trial_search(query: str, top_n: int = _MAX_RESULTS) -> dict:
     if _bm25 is None:
-        load_trials(_active_snapshot)
+        build_index()
+    top_n = min(int(top_n), _MAX_RESULTS)
     tokens = query.lower().split()
     scores = _bm25.get_scores(tokens)
     top_indices = sorted(range(len(scores)), key=lambda i: -scores[i])[:top_n]
     results = []
     for i in top_indices:
         if scores[i] > 0:
+            trial = _get_trial(_trial_ids[i])
             results.append({
-                "nct_id": _trials[i]["nct_id"],
-                "title": _trials[i].get("title", ""),
-                "indication": _trials[i].get("indication", ""),
+                "nct_id": _trial_ids[i],
+                "title": trial.get("title", ""),
+                "conditions": trial.get("conditions", []),
+                "phase": trial.get("phase", []),
                 "score": float(scores[i]),
             })
-    return {"query": query, "snapshot": _active_snapshot, "trials": results}
+    return {"query": query, "trials": results}
+
+
+def get_trial(trial_id: str):
+    return _get_trial(trial_id)

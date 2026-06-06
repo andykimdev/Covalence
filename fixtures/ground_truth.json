@@ -1,0 +1,1856 @@
+[
+  {
+    "patient_id": "c86c400e-ff88-a1e3-2e23-caa4d8311f47",
+    "first_name": "Herschel574",
+    "last_name": "Greenfelder433",
+    "age": 74,
+    "gender": "M",
+    "indications": [
+      "Obesity",
+      "AFib"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "aa616abe-1761-0c9a-7959-07544679dafd",
+    "first_name": "Jona712",
+    "last_name": "Zboncak558",
+    "age": 47,
+    "gender": "F",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "46976cf7-b0bf-be20-39a5-9f425a52886d",
+    "first_name": "Barbara209",
+    "last_name": "Caraballo427",
+    "age": 60,
+    "gender": "F",
+    "indications": [
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "4f083ce3-f12b-bb4b-7353-e17f0cd55b0a",
+    "first_name": "Ezekiel373",
+    "last_name": "Walter473",
+    "age": 70,
+    "gender": "M",
+    "indications": [
+      "Hypertension",
+      "Obesity"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "4f083ce3-f12b-bb4b-7353-e17f0cd55b0a",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 48.3,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-20T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "aee7bbe1-0c45-c028-1e62-1f4cdb30c273",
+    "first_name": "Wilfredo622",
+    "last_name": "Fritsch593",
+    "age": 61,
+    "gender": "M",
+    "indications": [
+      "Hyperlipidemia",
+      "Obesity",
+      "MDD"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "aee7bbe1-0c45-c028-1e62-1f4cdb30c273",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 225.3,
+        "units": "mg/dL",
+        "date": "2026-05-14T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "ba419d35-0dfe-8af7-347c-eebf02485a56",
+    "first_name": "Corie618",
+    "last_name": "Crooks415",
+    "age": 70,
+    "gender": "F",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "76b20010-c318-5754-8c85-983aa538522f",
+    "first_name": "Jody426",
+    "last_name": "Hickle134",
+    "age": 75,
+    "gender": "M",
+    "indications": [
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 4,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "76b20010-c318-5754-8c85-983aa538522f",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 46.2,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-24T01:35:19Z"
+      },
+      {
+        "patient_id": "76b20010-c318-5754-8c85-983aa538522f",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 208.8,
+        "units": "mg/dL",
+        "date": "2026-05-23T01:35:19Z"
+      },
+      {
+        "patient_id": "76b20010-c318-5754-8c85-983aa538522f",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 9.3,
+        "units": "g/dL",
+        "date": "2026-05-10T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "46ee9d82-b52c-856d-069b-5064ff052225",
+    "first_name": "Shalanda398",
+    "last_name": "Terry864",
+    "age": 78,
+    "gender": "F",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "e74367bd-7385-97dc-2c7f-251b4cd9fe29",
+    "first_name": "Tennille443",
+    "last_name": "Sporer811",
+    "age": 46,
+    "gender": "F",
+    "indications": [
+      "CHF",
+      "Obesity"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "5e688e99-61b3-5c88-3f60-21df8aaced27",
+    "first_name": "Wallace647",
+    "last_name": "Effertz744",
+    "age": 74,
+    "gender": "M",
+    "indications": [
+      "T2DM",
+      "CKD",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Anemia"
+    ],
+    "indication_count": 5,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_statin",
+        "description": "No statin therapy in diabetic patient (last LDL: 145 mg/dL)",
+        "guideline": "ADA Standards of Care: statin recommended for all T2DM patients over 40"
+      },
+      {
+        "type": "missing_ace_arb",
+        "description": "No ACE inhibitor/ARB in CKD patient (last eGFR: 83)",
+        "guideline": "KDIGO: ACEi/ARB recommended for CKD patients"
+      },
+      {
+        "type": "missing_antidiabetic",
+        "description": "No antidiabetic medication in T2DM patient (last A1c: 6.8%)",
+        "guideline": "ADA: pharmacotherapy indicated for T2DM"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "5e688e99-61b3-5c88-3f60-21df8aaced27",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 10.5,
+        "units": "%",
+        "date": "2026-05-29T01:35:19Z"
+      },
+      {
+        "patient_id": "5e688e99-61b3-5c88-3f60-21df8aaced27",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 247.4,
+        "units": "mg/dL",
+        "date": "2026-05-15T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "eb5910f1-26e6-bc6f-b300-716eae678d6f",
+    "first_name": "Larissa293",
+    "last_name": "Schaden604",
+    "age": 78,
+    "gender": "F",
+    "indications": [
+      "T2DM",
+      "Hypertension",
+      "Obesity"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_statin",
+        "description": "No statin therapy in diabetic patient (last LDL: 148 mg/dL)",
+        "guideline": "ADA Standards of Care: statin recommended for all T2DM patients over 40"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "eb5910f1-26e6-bc6f-b300-716eae678d6f",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 56.6,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-09T01:35:19Z"
+      },
+      {
+        "patient_id": "eb5910f1-26e6-bc6f-b300-716eae678d6f",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 9.7,
+        "units": "%",
+        "date": "2026-06-03T01:35:19Z"
+      },
+      {
+        "patient_id": "eb5910f1-26e6-bc6f-b300-716eae678d6f",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 233.2,
+        "units": "mg/dL",
+        "date": "2026-05-11T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "6fbddf55-7096-b883-7cd3-260f27953080",
+    "first_name": "Clarinda196",
+    "last_name": "Lynch190",
+    "age": 73,
+    "gender": "F",
+    "indications": [
+      "T2DM",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity"
+    ],
+    "indication_count": 4,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_antidiabetic",
+        "description": "No antidiabetic medication in T2DM patient (last A1c: 7.3%)",
+        "guideline": "ADA: pharmacotherapy indicated for T2DM"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "6fbddf55-7096-b883-7cd3-260f27953080",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 9.8,
+        "units": "%",
+        "date": "2026-05-29T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "62f60bdb-cc5c-8305-b98b-f2b229a55eca",
+    "first_name": "Angel97",
+    "last_name": "Rath779",
+    "age": 58,
+    "gender": "F",
+    "indications": [
+      "Hypertension"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "982750f4-569b-5949-196b-60699bdda3fb",
+    "first_name": "Dwana281",
+    "last_name": "Sauer652",
+    "age": 54,
+    "gender": "F",
+    "indications": [
+      "CHF",
+      "AFib"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "f07c88e7-f321-faf4-39ce-0b230eacaed9",
+    "first_name": "Rey54",
+    "last_name": "Hilpert278",
+    "age": 75,
+    "gender": "M",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "c053e996-a4c4-6c02-e2b6-284227156c67",
+    "first_name": "Sharyn437",
+    "last_name": "Stanton715",
+    "age": 63,
+    "gender": "F",
+    "indications": [
+      "Hypertension",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "c053e996-a4c4-6c02-e2b6-284227156c67",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 55.0,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-25T01:35:19Z"
+      },
+      {
+        "patient_id": "c053e996-a4c4-6c02-e2b6-284227156c67",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 8.6,
+        "units": "g/dL",
+        "date": "2026-05-16T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "2d68ad16-268a-478c-1f84-d0f1976e1a46",
+    "first_name": "Mauro926",
+    "last_name": "Braun514",
+    "age": 75,
+    "gender": "M",
+    "indications": [
+      "T2DM",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 5,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "2d68ad16-268a-478c-1f84-d0f1976e1a46",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 9.5,
+        "units": "%",
+        "date": "2026-05-13T01:35:19Z"
+      },
+      {
+        "patient_id": "2d68ad16-268a-478c-1f84-d0f1976e1a46",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 219.8,
+        "units": "mg/dL",
+        "date": "2026-05-20T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "922fb35e-148d-9e82-7e65-bfa05e3b3515",
+    "first_name": "Agnes294",
+    "last_name": "Stark857",
+    "age": 55,
+    "gender": "F",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "6776bdb0-c1ea-ca74-aa69-e911c0ea9b5d",
+    "first_name": "Fredda152",
+    "last_name": "Jenkins714",
+    "age": 54,
+    "gender": "F",
+    "indications": [
+      "Hypertension",
+      "Obesity"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_antihypertensive",
+        "description": "No antihypertensive in hypertensive patient (last BP: 135/104 mmHg)",
+        "guideline": "AHA/JNC: antihypertensive therapy recommended for hypertension"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "6776bdb0-c1ea-ca74-aa69-e911c0ea9b5d",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 54.7,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-10T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "947c82ee-1735-c9ed-8210-38cb93d8070c",
+    "first_name": "Marcell728",
+    "last_name": "McDermott739",
+    "age": 63,
+    "gender": "F",
+    "indications": [
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "947c82ee-1735-c9ed-8210-38cb93d8070c",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 198.3,
+        "units": "mg/dL",
+        "date": "2026-05-31T01:35:19Z"
+      },
+      {
+        "patient_id": "947c82ee-1735-c9ed-8210-38cb93d8070c",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 7.5,
+        "units": "g/dL",
+        "date": "2026-05-12T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "c0a47dee-cc72-29ce-df5a-ea6d306c36a4",
+    "first_name": "V\u00edctor493",
+    "last_name": "Bustos920",
+    "age": 55,
+    "gender": "M",
+    "indications": [
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "35b353dd-402b-571a-d67a-af0a104d0854",
+    "first_name": "Jody426",
+    "last_name": "Monahan736",
+    "age": 76,
+    "gender": "M",
+    "indications": [
+      "T2DM",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 5,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_antidiabetic",
+        "description": "No antidiabetic medication in T2DM patient (last A1c: 6.8%)",
+        "guideline": "ADA: pharmacotherapy indicated for T2DM"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "35b353dd-402b-571a-d67a-af0a104d0854",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 10.3,
+        "units": "%",
+        "date": "2026-05-06T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "9661a432-4630-2cd9-142c-386845fae837",
+    "first_name": "Paul232",
+    "last_name": "Tremblay80",
+    "age": 72,
+    "gender": "M",
+    "indications": [
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "2c167999-289d-95fa-5c27-7d8b8d35348c",
+    "first_name": "Eliseo499",
+    "last_name": "Nader710",
+    "age": 58,
+    "gender": "M",
+    "indications": [
+      "T2DM",
+      "CKD",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 6,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_ace_arb",
+        "description": "No ACE inhibitor/ARB in CKD patient (last eGFR: 76)",
+        "guideline": "KDIGO: ACEi/ARB recommended for CKD patients"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "2c167999-289d-95fa-5c27-7d8b8d35348c",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 9.4,
+        "units": "%",
+        "date": "2026-06-03T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "4fa9f8cd-384b-4e91-17d8-b07065e00066",
+    "first_name": "Marcos263",
+    "last_name": "Flatley871",
+    "age": 75,
+    "gender": "M",
+    "indications": [
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "080b069b-5108-46b6-ecef-6aacd3b9ef3f",
+    "first_name": "Chester802",
+    "last_name": "Aufderhar910",
+    "age": 68,
+    "gender": "M",
+    "indications": [
+      "Obesity",
+      "MDD"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "f95a6723-14a5-c4b6-78df-fa97f7ab361c",
+    "first_name": "Roxann426",
+    "last_name": "Bosco882",
+    "age": 50,
+    "gender": "F",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "6aed9210-c500-4375-b0fc-3374c40b8591",
+    "first_name": "Lyman173",
+    "last_name": "Runte676",
+    "age": 51,
+    "gender": "M",
+    "indications": [
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "f32a088b-988b-d7d5-008b-89ea4ed1fc48",
+    "first_name": "Mariano761",
+    "last_name": "Santacruz647",
+    "age": 52,
+    "gender": "M",
+    "indications": [
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "4aaa0001-3832-cc52-e2f3-47aad08f4284",
+    "first_name": "Marvin195",
+    "last_name": "Weissnat378",
+    "age": 53,
+    "gender": "M",
+    "indications": [
+      "Hypertension",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "7b06ee52-df9a-8487-0be6-dff27cc7d519",
+    "first_name": "Ressie457",
+    "last_name": "Nader710",
+    "age": 69,
+    "gender": "F",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "a2fb233f-60e0-b477-cd38-af3923f792a3",
+    "first_name": "Tanner110",
+    "last_name": "Mitchell808",
+    "age": 49,
+    "gender": "M",
+    "indications": [
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "5ba0a3f3-32f7-02b1-ec6a-8f568923954c",
+    "first_name": "Faustino767",
+    "last_name": "Langworth352",
+    "age": 70,
+    "gender": "M",
+    "indications": [
+      "T2DM",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 5,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_statin",
+        "description": "No statin therapy in diabetic patient (last LDL: 125 mg/dL)",
+        "guideline": "ADA Standards of Care: statin recommended for all T2DM patients over 40"
+      },
+      {
+        "type": "missing_antidiabetic",
+        "description": "No antidiabetic medication in T2DM patient (last A1c: 6.9%)",
+        "guideline": "ADA: pharmacotherapy indicated for T2DM"
+      },
+      {
+        "type": "missing_antihypertensive",
+        "description": "No antihypertensive in hypertensive patient (last BP: 138/86 mmHg)",
+        "guideline": "AHA/JNC: antihypertensive therapy recommended for hypertension"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "5ba0a3f3-32f7-02b1-ec6a-8f568923954c",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 9.4,
+        "units": "%",
+        "date": "2026-05-07T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "d3727ff2-5d7b-347f-d78c-edc4323cf890",
+    "first_name": "Eunice461",
+    "last_name": "Fay398",
+    "age": 59,
+    "gender": "F",
+    "indications": [
+      "T2DM",
+      "CKD",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity"
+    ],
+    "indication_count": 5,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_statin",
+        "description": "No statin therapy in diabetic patient (last LDL: 168 mg/dL)",
+        "guideline": "ADA Standards of Care: statin recommended for all T2DM patients over 40"
+      },
+      {
+        "type": "missing_ace_arb",
+        "description": "No ACE inhibitor/ARB in CKD patient (last eGFR: 67)",
+        "guideline": "KDIGO: ACEi/ARB recommended for CKD patients"
+      },
+      {
+        "type": "missing_antihypertensive",
+        "description": "No antihypertensive in hypertensive patient (last BP: 106/81 mmHg)",
+        "guideline": "AHA/JNC: antihypertensive therapy recommended for hypertension"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "d3727ff2-5d7b-347f-d78c-edc4323cf890",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 11.2,
+        "units": "%",
+        "date": "2026-06-02T01:35:19Z"
+      },
+      {
+        "patient_id": "d3727ff2-5d7b-347f-d78c-edc4323cf890",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 207.9,
+        "units": "mg/dL",
+        "date": "2026-05-07T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "d15b23ed-02d5-3e28-efbd-2604425317c5",
+    "first_name": "Ivan258",
+    "last_name": "Goodwin327",
+    "age": 61,
+    "gender": "M",
+    "indications": [
+      "T2DM",
+      "CKD",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 6,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_statin",
+        "description": "No statin therapy in diabetic patient (last LDL: 190 mg/dL)",
+        "guideline": "ADA Standards of Care: statin recommended for all T2DM patients over 40"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "d15b23ed-02d5-3e28-efbd-2604425317c5",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 9.7,
+        "units": "%",
+        "date": "2026-06-03T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "d20bc0bc-3051-ae6f-f391-ceec7ec0370f",
+    "first_name": "Lavette209",
+    "last_name": "Little434",
+    "age": 60,
+    "gender": "F",
+    "indications": [],
+    "indication_count": 0,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [],
+    "priority": "none"
+  },
+  {
+    "patient_id": "5e7ebf2c-22ec-a89b-53ab-38edddd81be9",
+    "first_name": "Rosalba160",
+    "last_name": "Runte676",
+    "age": 61,
+    "gender": "F",
+    "indications": [
+      "T2DM",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_antidiabetic",
+        "description": "No antidiabetic medication in T2DM patient (last A1c: 7.0%)",
+        "guideline": "ADA: pharmacotherapy indicated for T2DM"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "5e7ebf2c-22ec-a89b-53ab-38edddd81be9",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 53.6,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-23T01:35:19Z"
+      },
+      {
+        "patient_id": "5e7ebf2c-22ec-a89b-53ab-38edddd81be9",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 11.1,
+        "units": "%",
+        "date": "2026-05-31T01:35:19Z"
+      },
+      {
+        "patient_id": "5e7ebf2c-22ec-a89b-53ab-38edddd81be9",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 245.7,
+        "units": "mg/dL",
+        "date": "2026-06-01T01:35:19Z"
+      },
+      {
+        "patient_id": "5e7ebf2c-22ec-a89b-53ab-38edddd81be9",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 7.8,
+        "units": "g/dL",
+        "date": "2026-05-26T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "5c39a9da-6fb0-3cbb-0181-add875529d46",
+    "first_name": "Teodoro374",
+    "last_name": "Rosas160",
+    "age": 59,
+    "gender": "M",
+    "indications": [
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "79021b82-f370-50bb-c5a1-7333816d683f",
+    "first_name": "Evette961",
+    "last_name": "Sporer811",
+    "age": 64,
+    "gender": "F",
+    "indications": [
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "79021b82-f370-50bb-c5a1-7333816d683f",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 8.9,
+        "units": "g/dL",
+        "date": "2026-05-29T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "6f45f2e9-a617-570a-8867-dec1260088bb",
+    "first_name": "Carey440",
+    "last_name": "Mraz590",
+    "age": 64,
+    "gender": "M",
+    "indications": [
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "AFib",
+      "Anemia"
+    ],
+    "indication_count": 5,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "6f45f2e9-a617-570a-8867-dec1260088bb",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 56.6,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-06T01:35:19Z"
+      },
+      {
+        "patient_id": "6f45f2e9-a617-570a-8867-dec1260088bb",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 202.8,
+        "units": "mg/dL",
+        "date": "2026-05-09T01:35:19Z"
+      },
+      {
+        "patient_id": "6f45f2e9-a617-570a-8867-dec1260088bb",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 9.7,
+        "units": "g/dL",
+        "date": "2026-05-22T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "d3cb6736-0991-40ed-a220-7c714aba4c37",
+    "first_name": "Tristan353",
+    "last_name": "Reichel38",
+    "age": 51,
+    "gender": "M",
+    "indications": [
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 4,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "d3cb6736-0991-40ed-a220-7c714aba4c37",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 50.7,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-06T01:35:19Z"
+      },
+      {
+        "patient_id": "d3cb6736-0991-40ed-a220-7c714aba4c37",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 220.9,
+        "units": "mg/dL",
+        "date": "2026-05-08T01:35:19Z"
+      },
+      {
+        "patient_id": "d3cb6736-0991-40ed-a220-7c714aba4c37",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 7.8,
+        "units": "g/dL",
+        "date": "2026-05-13T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "37cb778a-db37-d479-cf22-19d49f0915e7",
+    "first_name": "Boris111",
+    "last_name": "Bins636",
+    "age": 70,
+    "gender": "M",
+    "indications": [
+      "Hypertension",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "7512bbb4-b22b-0979-6edc-389e16607ac7",
+    "first_name": "Tamie596",
+    "last_name": "Hickle134",
+    "age": 62,
+    "gender": "F",
+    "indications": [
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "7512bbb4-b22b-0979-6edc-389e16607ac7",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 7.6,
+        "units": "g/dL",
+        "date": "2026-05-08T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "7811dc30-8c86-8164-6c33-6b6f464745ef",
+    "first_name": "Mignon230",
+    "last_name": "Howell947",
+    "age": 64,
+    "gender": "F",
+    "indications": [
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 4,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "d57841fa-c9e2-a3d1-0e78-09bdbe4eed66",
+    "first_name": "Jessica140",
+    "last_name": "Bailey598",
+    "age": 50,
+    "gender": "F",
+    "indications": [
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "medium"
+  },
+  {
+    "patient_id": "45acbb9d-89a7-8e75-5b8b-5cbde1c98925",
+    "first_name": "Bari62",
+    "last_name": "Hintz995",
+    "age": 60,
+    "gender": "F",
+    "indications": [
+      "T2DM",
+      "CKD",
+      "CHF",
+      "Anemia"
+    ],
+    "indication_count": 4,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_statin",
+        "description": "No statin therapy in diabetic patient (last LDL: 138 mg/dL)",
+        "guideline": "ADA Standards of Care: statin recommended for all T2DM patients over 40"
+      },
+      {
+        "type": "missing_ace_arb",
+        "description": "No ACE inhibitor/ARB in CKD patient (last eGFR: 86)",
+        "guideline": "KDIGO: ACEi/ARB recommended for CKD patients"
+      },
+      {
+        "type": "missing_antidiabetic",
+        "description": "No antidiabetic medication in T2DM patient (last A1c: 6.9%)",
+        "guideline": "ADA: pharmacotherapy indicated for T2DM"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "45acbb9d-89a7-8e75-5b8b-5cbde1c98925",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 45.6,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-30T01:35:19Z"
+      },
+      {
+        "patient_id": "45acbb9d-89a7-8e75-5b8b-5cbde1c98925",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 11.3,
+        "units": "%",
+        "date": "2026-05-27T01:35:19Z"
+      },
+      {
+        "patient_id": "45acbb9d-89a7-8e75-5b8b-5cbde1c98925",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 198.2,
+        "units": "mg/dL",
+        "date": "2026-05-15T01:35:19Z"
+      },
+      {
+        "patient_id": "45acbb9d-89a7-8e75-5b8b-5cbde1c98925",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 7.7,
+        "units": "g/dL",
+        "date": "2026-05-16T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "322ab5c6-5846-ac1e-38cc-48b8cb441e20",
+    "first_name": "Lena684",
+    "last_name": "Kunze215",
+    "age": 48,
+    "gender": "F",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "75d6a35c-c2e1-5b9f-e7f8-6a5b05af8fc8",
+    "first_name": "Hiram237",
+    "last_name": "Batz141",
+    "age": 65,
+    "gender": "M",
+    "indications": [
+      "Hypertension",
+      "Anemia"
+    ],
+    "indication_count": 2,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "75d6a35c-c2e1-5b9f-e7f8-6a5b05af8fc8",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 54.7,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-23T01:35:19Z"
+      },
+      {
+        "patient_id": "75d6a35c-c2e1-5b9f-e7f8-6a5b05af8fc8",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 8.0,
+        "units": "g/dL",
+        "date": "2026-05-25T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "f21f4d4f-0a0f-cdaf-ce6d-79a74c96df5b",
+    "first_name": "Kenny207",
+    "last_name": "Gerhold939",
+    "age": 70,
+    "gender": "M",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "2de4dd0d-f665-8a2e-4c6b-997735e14ace",
+    "first_name": "Aron520",
+    "last_name": "Hammes673",
+    "age": 55,
+    "gender": "M",
+    "indications": [
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "47d390c6-a1a2-1a80-dd1d-9722c7b24159",
+    "first_name": "Demarcus108",
+    "last_name": "Jones311",
+    "age": 61,
+    "gender": "M",
+    "indications": [
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "47d390c6-a1a2-1a80-dd1d-9722c7b24159",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 51.7,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-21T01:35:19Z"
+      },
+      {
+        "patient_id": "47d390c6-a1a2-1a80-dd1d-9722c7b24159",
+        "trigger_type": "LDL_critical",
+        "description": "LDL above 190 mg/dL",
+        "value": 234.6,
+        "units": "mg/dL",
+        "date": "2026-05-11T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "dd9da64b-7b38-4f91-e75d-b1268dde60d4",
+    "first_name": "Donnetta255",
+    "last_name": "Jakubowski832",
+    "age": 56,
+    "gender": "F",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "7c913488-8c54-7aa0-a452-83dbc3ad8377",
+    "first_name": "Florencia449",
+    "last_name": "Concepci\u00f3n765",
+    "age": 65,
+    "gender": "F",
+    "indications": [
+      "T2DM",
+      "CKD",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 6,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_statin",
+        "description": "No statin therapy in diabetic patient (last LDL: 257 mg/dL)",
+        "guideline": "ADA Standards of Care: statin recommended for all T2DM patients over 40"
+      },
+      {
+        "type": "missing_ace_arb",
+        "description": "No ACE inhibitor/ARB in CKD patient (last eGFR: 22)",
+        "guideline": "KDIGO: ACEi/ARB recommended for CKD patients"
+      },
+      {
+        "type": "missing_antihypertensive",
+        "description": "No antihypertensive in hypertensive patient (last BP: 110/96 mmHg)",
+        "guideline": "AHA/JNC: antihypertensive therapy recommended for hypertension"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "7c913488-8c54-7aa0-a452-83dbc3ad8377",
+        "trigger_type": "A1c_spike",
+        "description": "A1c rose above 9.0%",
+        "value": 11.0,
+        "units": "%",
+        "date": "2026-05-25T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "bff9d9d5-ee3d-d852-9c67-36d8361a4a4a",
+    "first_name": "Rosario163",
+    "last_name": "Ortiz186",
+    "age": 77,
+    "gender": "M",
+    "indications": [
+      "CKD",
+      "Hypertension",
+      "Obesity"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_ace_arb",
+        "description": "No ACE inhibitor/ARB in CKD patient (last eGFR: 14)",
+        "guideline": "KDIGO: ACEi/ARB recommended for CKD patients"
+      }
+    ],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "a1b0209c-23a4-753b-c6fd-4fcea697074c",
+    "first_name": "Margarite168",
+    "last_name": "Mann644",
+    "age": 63,
+    "gender": "F",
+    "indications": [
+      "CKD",
+      "Hypertension",
+      "Obesity"
+    ],
+    "indication_count": 3,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_ace_arb",
+        "description": "No ACE inhibitor/ARB in CKD patient (last eGFR: 12)",
+        "guideline": "KDIGO: ACEi/ARB recommended for CKD patients"
+      },
+      {
+        "type": "missing_antihypertensive",
+        "description": "No antihypertensive in hypertensive patient (last BP: 159/85 mmHg)",
+        "guideline": "AHA/JNC: antihypertensive therapy recommended for hypertension"
+      }
+    ],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "26aa011e-0d75-d1a3-3c5a-560a9450cc9d",
+    "first_name": "Jesse626",
+    "last_name": "Wolf938",
+    "age": 59,
+    "gender": "M",
+    "indications": [
+      "CKD",
+      "Hypertension",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 4,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_ace_arb",
+        "description": "No ACE inhibitor/ARB in CKD patient (last eGFR: 11)",
+        "guideline": "KDIGO: ACEi/ARB recommended for CKD patients"
+      }
+    ],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "b6a1cac9-8873-36a7-e726-4aad8a07d44d",
+    "first_name": "Renaldo199",
+    "last_name": "Crist667",
+    "age": 78,
+    "gender": "M",
+    "indications": [
+      "CKD",
+      "Hypertension",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 4,
+    "is_multi_indication": true,
+    "care_gaps": [
+      {
+        "type": "missing_ace_arb",
+        "description": "No ACE inhibitor/ARB in CKD patient (last eGFR: 10)",
+        "guideline": "KDIGO: ACEi/ARB recommended for CKD patients"
+      }
+    ],
+    "temporal_alerts": [
+      {
+        "patient_id": "b6a1cac9-8873-36a7-e726-4aad8a07d44d",
+        "trigger_type": "eGFR_decline",
+        "description": "eGFR crossed below 60 (CKD stage 3 transition)",
+        "value": 57.2,
+        "units": "mL/min/{1.73_m2}",
+        "date": "2026-05-29T01:35:19Z"
+      },
+      {
+        "patient_id": "b6a1cac9-8873-36a7-e726-4aad8a07d44d",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 8.8,
+        "units": "g/dL",
+        "date": "2026-05-30T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "cross_indication_review",
+      "care_gap_intervention",
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "d58f6a36-6251-66d6-548b-14d5a4a1b3a8",
+    "first_name": "Lou594",
+    "last_name": "Anderson154",
+    "age": 59,
+    "gender": "M",
+    "indications": [
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 4,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "616f118f-d04b-423f-e5da-34a360ba6f6b",
+    "first_name": "Lupe126",
+    "last_name": "Kunde533",
+    "age": 78,
+    "gender": "M",
+    "indications": [
+      "Obesity"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "trial_matching"
+    ],
+    "priority": "low"
+  },
+  {
+    "patient_id": "565fd270-4bdd-539e-8c7d-9cd4c44a7164",
+    "first_name": "Ian270",
+    "last_name": "Kovacek682",
+    "age": 78,
+    "gender": "M",
+    "indications": [
+      "Anemia"
+    ],
+    "indication_count": 1,
+    "is_multi_indication": false,
+    "care_gaps": [],
+    "temporal_alerts": [
+      {
+        "patient_id": "565fd270-4bdd-539e-8c7d-9cd4c44a7164",
+        "trigger_type": "hemoglobin_drop",
+        "description": "Hemoglobin dropped below 10 g/dL (anemia)",
+        "value": 9.4,
+        "units": "g/dL",
+        "date": "2026-05-07T01:35:19Z"
+      }
+    ],
+    "expected_actions": [
+      "urgent_lab_followup",
+      "trial_matching"
+    ],
+    "priority": "high"
+  },
+  {
+    "patient_id": "9f603429-60c1-cb44-12f8-1f572da37e31",
+    "first_name": "Jae222",
+    "last_name": "Schmidt332",
+    "age": 78,
+    "gender": "M",
+    "indications": [
+      "CKD",
+      "Hypertension",
+      "Hyperlipidemia",
+      "Obesity",
+      "Anemia"
+    ],
+    "indication_count": 5,
+    "is_multi_indication": true,
+    "care_gaps": [],
+    "temporal_alerts": [],
+    "expected_actions": [
+      "cross_indication_review",
+      "trial_matching"
+    ],
+    "priority": "high"
+  }
+]
