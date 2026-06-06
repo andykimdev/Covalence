@@ -1,0 +1,14 @@
+.env
+.venv/
+venv/
+
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+
+.pytest_cache/
+
+fixtures/pipeline_output.json
+
+docs/
