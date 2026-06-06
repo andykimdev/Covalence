@@ -126,6 +126,22 @@ def render_event(event: dict):
         st.success("Analysis complete")
 
 
+def _classify_outcome(result: dict) -> str:
+    """Map a run_agent result to one of three outcome categories."""
+    if not result:
+        return "error"
+    if result.get("outcome") == "no_match":
+        return "no_match"
+    if result.get("outcome") == "error":
+        return "error"
+    matches = result.get("ranked_matches", [])
+    if isinstance(matches, list) and len(matches) > 0:
+        return "success"
+    if "ranked_matches" in result:
+        return "no_match"
+    return "error"
+
+
 def patient_label(p: dict) -> str:
     """Sidebar dropdown label for a patient."""
     gt = get_ground_truth(p["patient_id"])
@@ -253,7 +269,7 @@ if run:
                 result = run_agent(enriched, trace_callback=on_event)
                 st.session_state.result = result
             except Exception as e:
-                st.error(f"Agent crashed: {e}")
+                st.session_state.result = {"outcome": "error", "reason": str(e)}
 
 elif st.session_state.trace:
     with progress_slot.container():
@@ -271,7 +287,15 @@ if st.session_state.result:
 
     st.subheader("🎯 Ranked Trial Matches")
 
-    if "ranked_matches" in result and result["ranked_matches"]:
+    outcome = _classify_outcome(result)
+
+    if outcome == "no_match":
+        st.info("No clinical trials matched this patient's indication profile. This may indicate the patient's conditions are too rare, too complex, or insufficiently documented for the current trial corpus.")
+
+    elif outcome == "error":
+        st.warning("The agent was unable to complete trial matching for this patient. This may be due to missing data or an unexpected condition profile. Try selecting a different patient or re-running the analysis.")
+
+    elif outcome == "success":
         for match in result["ranked_matches"]:
             with st.container(border=True):
                 c_rank, c_main = st.columns([1, 6])

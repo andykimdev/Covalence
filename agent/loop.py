@@ -70,10 +70,9 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
         # No tool calls means agent is done
         # The agent is done if it does not need to call any tools to answer the task
         if not msg.tool_calls:
-            # Update the trace callback with the final answer
             if trace_callback:
                 trace_callback({"type": "final", "content": msg.content})
-            return parse_final_output(msg.content)
+            return {"outcome": "no_match", "reason": "Agent completed without finding matching trials."}
 
         # Execute every tool call this turn (parallel if multiple)
         # The agent will call the tools with the arguments provided in the tool call
@@ -117,7 +116,7 @@ def run_agent(patient_json: dict, trace_callback=None) -> dict:
                     trace_callback({"type": "final", "content": None})
                 return result
 
-    return {"error": "max iterations reached", "messages": messages}
+    return {"outcome": "error", "reason": "Agent reached maximum iterations without producing a result."}
 
 
 def _flag_resolvable(verdict: dict, care_gaps: list) -> dict:
