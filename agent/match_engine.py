@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from agent.clinical_codes import GRAPH_NODE_CODES, LOINC, MED_CLASSES
-from agent.prompts import RESIDUAL_CHECK_PROMPT
+from agent.prompts import COVAI_CARE_GAP_PROMPT, COVAI_CRITERION_PROMPT, RESIDUAL_CHECK_PROMPT
 
 load_dotenv()
 
@@ -318,6 +318,78 @@ def _is_cross_indication(patient: dict, trial: dict) -> bool:
         if code not in documented_codes:
             return True
     return False
+
+
+def covai_care_gaps(patient: dict) -> list[dict]:
+    """LLM screens patient data for care gaps beyond the deterministic Step 3 controlled vocabulary."""
+    age = (patient.get("demographics") or {}).get("age") or patient.get("age")
+    existing = [f"{g['condition']} missing {g['missing_drug']}" for g in patient.get("care_gaps", [])]
+    user = json.dumps({
+        "patient_context": {
+            "age": age,
+            "gender": (patient.get("demographics") or {}).get("gender") or patient.get("gender"),
+            "active_conditions": patient.get("all_indications", []),
+            "active_medications": patient.get("active_medications", []),
+            "inferred_conditions": [ic.get("description") for ic in patient.get("inferred_conditions", [])],
+            "recent_observations": [
+                {"lab": o.get("description"), "value": o.get("value"), "units": o.get("units"), "date": o.get("date")}
+                for o in patient.get("observations", [])
+                if o.get("category") in ("laboratory", "vital-signs")
+            ][:20],
+        },
+        "existing_gaps": existing,
+    }, indent=2)
+    try:
+        resp = _client.chat.completions.create(
+            model=_MODEL, temperature=0,
+            messages=[
+                {"role": "system", "content": COVAI_CARE_GAP_PROMPT},
+                {"role": "user", "content": user},
+            ],
+        )
+        clean = resp.choices[0].message.content.replace("```json", "").replace("```", "").strip()
+        return json.loads(clean).get("additional_gaps", [])
+    except Exception:
+        return []
+
+
+def covai_assess(patient: dict, criterion: str, trial_id: str = "") -> dict:
+    """On-demand LLM assessment of a single UNKNOWN criterion using patient context + medical knowledge."""
+    age = (patient.get("demographics") or {}).get("age") or patient.get("age")
+    user = json.dumps({
+        "criterion": criterion,
+        "trial_id": trial_id,
+        "patient_context": {
+            "age": age,
+            "gender": (patient.get("demographics") or {}).get("gender") or patient.get("gender"),
+            "active_conditions": patient.get("all_indications", []),
+            "active_medications": patient.get("active_medications", []),
+            "inferred_conditions": [ic.get("description") for ic in patient.get("inferred_conditions", [])],
+            "care_gaps": [f"{g['condition']} missing {g['missing_drug']}" for g in patient.get("care_gaps", [])],
+            "recent_observations": [
+                {"lab": o.get("description"), "value": o.get("value"), "date": o.get("date")}
+                for o in patient.get("observations", [])
+                if o.get("category") in ("laboratory", "vital-signs")
+            ][:20],
+        },
+    }, indent=2)
+    try:
+        resp = _client.chat.completions.create(
+            model=_MODEL, temperature=0,
+            messages=[
+                {"role": "system", "content": COVAI_CRITERION_PROMPT},
+                {"role": "user", "content": user},
+            ],
+        )
+        clean = resp.choices[0].message.content.replace("```json", "").replace("```", "").strip()
+        return json.loads(clean)
+    except Exception as e:
+        return {
+            "verdict": "Genuinely Uncertain",
+            "confidence": "low",
+            "reasoning": f"Assessment failed: {e}",
+            "data_needed": "Manual clinical review required",
+        }
 
 
 def _combined_score(

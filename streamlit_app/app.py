@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.clinical_codes import DISEASE_GRAPH_EDGES, DISEASE_GRAPH_EDGES_RAW
 from agent.pipeline import enrich_patient_dict, match_patient_end_to_end
+from agent.match_engine import covai_assess, covai_care_gaps
 from agent.opportunity_surface import run_opportunity_surface
 from data.load_fixtures import load_all, all_patients, get_ground_truth
 from tools.trial_search import build_index
@@ -69,15 +70,12 @@ def init_fixtures():
     build_index()
 
 
-_STAGES = ["Searching trials", "Parsing criteria", "Checking eligibility", "Validating", "Ranking"]
-_STAGES_PAST = ["Searched trials", "Parsed criteria", "Checked eligibility", "Validated", "Ranked"]
-_TOOL_TO_STAGE = {
-    "trial_search": 0,
-    "parse_criteria": 1,
-    "check_eligibility": 2,
-    "validate_verdicts": 3,
-    "rank_with_rationale": 4,
-}
+
+def _tlink(nct_id: str) -> str:
+    """Return a markdown hyperlink to clinicaltrials.gov for an NCT ID."""
+    if not nct_id:
+        return nct_id
+    return f"[{nct_id}](https://clinicaltrials.gov/study/{nct_id})"
 
 
 def _plain_english(event: dict) -> str:
@@ -90,9 +88,9 @@ def _plain_english(event: dict) -> str:
         if name == "trial_search":
             return f"Searching for trials matching: *{args.get('query', '')}*"
         if name == "parse_criteria":
-            return f"Parsing eligibility criteria for **{args.get('trial_id', '')}**"
+            return f"Parsing eligibility criteria for **{_tlink(args.get('trial_id', ''))}**"
         if name == "check_eligibility":
-            return f"Checking patient eligibility for **{args.get('trial_id', '')}**"
+            return f"Checking patient eligibility for **{_tlink(args.get('trial_id', ''))}**"
         if name == "validate_verdicts":
             return "Validating eligibility verdicts for consistency"
         if name == "rank_with_rationale":
@@ -113,7 +111,7 @@ def _plain_english(event: dict) -> str:
             passes = sum(1 for v in verdicts if v.get("verdict") == "PASS")
             total = len(verdicts)
             icon = {"PASS": "🟢", "FAIL": "🔴", "PARTIAL": "🟡"}.get(overall, "⚪")
-            return f"{icon} **{overall}** for {trial_id} — {passes}/{total} criteria met"
+            return f"{icon} **{overall}** for {_tlink(trial_id)} — {passes}/{total} criteria met"
         if name == "validate_verdicts":
             issues = result.get("issues", [])
             if issues:
@@ -125,24 +123,6 @@ def _plain_english(event: dict) -> str:
 
     return ""
 
-
-def render_progress(trace: list) -> None:
-    reached = -1
-    completed = -1
-    for event in trace:
-        stage = _TOOL_TO_STAGE.get(event.get("name", ""), -1)
-        if stage > reached:
-            reached = stage
-        if event.get("type") == "tool_result" and stage > completed:
-            completed = stage
-
-    for i, (label, past) in enumerate(zip(_STAGES, _STAGES_PAST)):
-        if i <= completed:
-            st.success(f"✓ {past}")
-        elif i == reached:
-            st.markdown(f'<div style="background:#e8f0fe;padding:6px 10px;border-radius:4px;font-size:14px;"><span class="cov-spinner"></span>{label}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f"<span style='color:grey'>○ {label}</span>", unsafe_allow_html=True)
 
 
 _GRAPH_NODE_LABELS = {
@@ -177,7 +157,7 @@ def _build_comorbidity_graph_html(expanded: list) -> str:
     source_ids = {s for s, _, _ in rel_edges}
 
     nodes = []
-    for sid in source_ids:
+    for sid in source_ids - reachable_targets:
         label = _GRAPH_NODE_LABELS.get(sid, sid)
         nodes.append({
             "id": sid,
@@ -223,11 +203,11 @@ def _build_comorbidity_graph_html(expanded: list) -> str:
 *{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{background:#ffffff;overflow:hidden;
            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}}
-#net{{width:100%;height:calc(100% - 36px)}}
+#net{{width:100%;height:calc(100% - 52px)}}
 #legend{{
   display:flex;align-items:center;flex-wrap:wrap;gap:10px;
   padding:5px 10px;font-size:11px;color:#5f6368;
-  border-top:1px solid #e8eaed;height:36px;
+  border-top:1px solid #e8eaed;min-height:36px;height:auto;
 }}
 .li{{display:flex;align-items:center;gap:4px}}
 .dot{{width:10px;height:10px;border-radius:50%;flex-shrink:0;border:2px solid transparent}}
@@ -242,7 +222,6 @@ html,body{{background:#ffffff;overflow:hidden;
   <span class="li"><span class="dot" style="background:#fff1f0;border-color:#cf1322"></span>High risk</span>
   <span class="li"><span class="dot" style="background:#fffbe6;border-color:#d48806"></span>Medium risk</span>
   <span class="li"><span class="dot" style="background:#f5f5f5;border-color:#8c8c8c"></span>Low risk</span>
-  <span style="color:#9aa0a6;margin-left:4px">Edge thickness = relative risk · Score = norm. RR × lab evidence</span>
 </div>
 <script>
 var container = document.getElementById('net');
@@ -316,7 +295,9 @@ var options = {{
   physics: {{enabled: false}},
   interaction: {{hover: true, tooltipDelay: 100, zoomView: false, dragView: false}},
 }};
-new vis.Network(container, data, options);
+window.addEventListener('load', function() {{
+  new vis.Network(container, data, options);
+}});
 </script>
 </body>
 </html>"""
@@ -369,7 +350,7 @@ def render_eligibility_detail(event: dict):
     resolvable_count = event.get("resolvable_count", 0)
 
     icon = {"PASS": "🟢", "FAIL": "🔴", "PARTIAL": "🟡"}.get(overall, "⚪")
-    header = f"{icon} {trial_id} — {pass_count}/{total} PASS"
+    header = f"{icon} {_tlink(trial_id)} — {pass_count}/{total} PASS"
     if resolvable_count:
         header += f", {resolvable_count} resolvable"
 
@@ -401,14 +382,14 @@ def render_event(event: dict):
     elif t == "residual_check_start":
         tid = event.get("trial_id", "")
         n = event.get("criteria_count", 0)
-        st.markdown(f"⟶ Checking **{n}** free-text criteria for **{tid}** (LLM)")
+        st.markdown(f"⟶ Checking **{n}** free-text criteria for **{_tlink(tid)}** (LLM)")
     elif t == "residual_check_result":
         tid = event.get("trial_id", "")
         verdicts = event.get("verdicts", [])
         passes = sum(1 for v in verdicts if v.get("verdict") == "PASS")
         unknowns = sum(1 for v in verdicts if v.get("verdict") == "UNKNOWN")
         fails = sum(1 for v in verdicts if v.get("verdict") == "FAIL")
-        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{tid} residual: {passes} PASS · {fails} FAIL · {unknowns} UNKNOWN", unsafe_allow_html=True)
+        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{_tlink(tid)} residual: {passes} PASS · {fails} FAIL · {unknowns} UNKNOWN", unsafe_allow_html=True)
     elif t == "final":
         st.success("Analysis complete")
 
@@ -919,7 +900,11 @@ def render_opportunity_landscape(session: dict, patient: dict) -> None:
                 st.markdown(badges, unsafe_allow_html=True)
 
                 # ── Title + indication ──
-                st.markdown(f"**{op['title']}**")
+                op_id = op.get("id", "")
+                if op.get("type") == "trial" and op_id.startswith("NCT"):
+                    st.markdown(f"**[{op['title']}](https://clinicaltrials.gov/study/{op_id})**")
+                else:
+                    st.markdown(f"**{op['title']}**")
                 if op["indication"]:
                     st.caption(op["indication"])
 
@@ -938,20 +923,41 @@ def render_opportunity_landscape(session: dict, patient: dict) -> None:
                         h2.markdown("**Patient data**")
                         h3.markdown("**Verdict**")
                         st.divider()
-                        for cv in all_verdicts:
+                        trial_id_for_covai = op.get("id", "")
+                        for ci, cv in enumerate(all_verdicts):
                             v = cv.get("verdict", "?")
                             is_residual = cv.get("source") == "residual"
                             resolvable = cv.get("resolvable", False)
                             icon = {"PASS": "✅", "FAIL": "🔧" if resolvable else "❌", "UNKNOWN": "⚠️"}.get(v, "❓")
-                            criterion = cv.get("criterion", "")
-                            if len(criterion) > 160:
-                                criterion = criterion[:160] + "..."
+                            criterion_text = cv.get("criterion", "")
+                            if len(criterion_text) > 160:
+                                criterion_text = criterion_text[:160] + "..."
                             rationale = cv.get("rationale", "")
                             patient_data = rationale if rationale else ("Not available" if v == "UNKNOWN" else "")
                             c1, c2, c3 = st.columns([3, 2, 1])
-                            c1.markdown(f"{'*[LLM]* ' if is_residual else ''}{criterion}")
+                            c1.markdown(f"{'*[LLM]* ' if is_residual else ''}{criterion_text}")
                             c2.caption(patient_data)
-                            c3.markdown(f"{icon} {'RESOLVABLE' if resolvable else v}")
+                            if v == "UNKNOWN":
+                                covai_key = f"covai_{trial_id_for_covai}_{ci}"
+                                covai_result = st.session_state.get(covai_key)
+                                if covai_result:
+                                    conf_icon = {"high": "🟢", "medium": "🟡", "low": "⚪"}.get(covai_result.get("confidence"), "⚪")
+                                    c3.markdown(f"{conf_icon} **{covai_result['verdict']}**")
+                                    c2.markdown(f"*CovAI: {covai_result['reasoning']}*")
+                                    if covai_result.get("data_needed"):
+                                        c2.caption(f"To confirm: {covai_result['data_needed']}")
+                                else:
+                                    c3.markdown(f"{icon} UNKNOWN")
+                                    if c3.button("CovAI", key=f"{covai_key}_btn", help="Ask CovAI to reason about this criterion"):
+                                        with st.spinner("CovAI assessing..."):
+                                            st.session_state[covai_key] = covai_assess(
+                                                session.get("enriched", {}),
+                                                cv.get("criterion", ""),
+                                                trial_id_for_covai,
+                                            )
+                                        st.rerun()
+                            else:
+                                c3.markdown(f"{icon} {'RESOLVABLE' if resolvable else v}")
                     else:
                         if op["criteria_met"]:
                             st.markdown("**Criteria met**")
@@ -964,6 +970,25 @@ def render_opportunity_landscape(session: dict, patient: dict) -> None:
 
                     if op["action"]:
                         st.success(f"Action: {op['action']}")
+
+                    if op.get("type") == "care_gap":
+                        covai_gap_key = f"covai_gaps_{session.get('enriched', {}).get('patient_id', 'p')}"
+                        gap_result = st.session_state.get(covai_gap_key)
+                        if gap_result is not None:
+                            if gap_result:
+                                st.markdown("**Additional care gaps identified by CovAI:**")
+                                for g in gap_result:
+                                    st.markdown(
+                                        f"- **{g.get('condition')}** — missing {g.get('missing_therapy')}  \n"
+                                        f"  *{g.get('rationale')}* ({g.get('guideline', '')})"
+                                    )
+                            else:
+                                st.caption("CovAI found no additional care gaps beyond the detected ones.")
+                        if st.button("More possible Care Gaps: CovAI", key=f"{covai_gap_key}_{i}_btn"):
+                            with st.spinner("CovAI screening for additional care gaps..."):
+                                st.session_state[covai_gap_key] = covai_care_gaps(session.get("enriched", {}))
+                            st.rerun()
+
                     if op["linked_id"] and op["linked_label"]:
                         tint = "#f3e8ff" if op["type"] == "care_gap" else "#ccfbf1"
                         st.markdown(
@@ -1293,6 +1318,15 @@ else:
             session = st.session_state.patient_sessions[pid]
             patient = session["patient"]
 
+            _close_col, _ = st.columns([1, 11])
+            with _close_col:
+                if st.button("✕ Close", key=f"close_{pid}", use_container_width=True):
+                    st.session_state.open_patients.remove(pid)
+                    del st.session_state.patient_sessions[pid]
+                    if st.session_state.run_for == pid:
+                        st.session_state.run_for = None
+                    st.rerun()
+
             col_patient, col_trace = st.columns([1, 1])
 
             # ── Landscape slot: created here so it renders below the two columns
@@ -1312,9 +1346,23 @@ else:
                 render_patient_profile(patient)
 
             with col_trace:
+                graph_slot = st.empty()
                 pipeline_summary_slot = st.empty()
+
+                if session.get("enriched"):
+                    expanded = session["enriched"].get("expanded_indications", [])
+                    if expanded:
+                        graph_html = _build_comorbidity_graph_html(expanded)
+                        if graph_html:
+                            expanded_names = {ei["name"] for ei in expanded}
+                            n_source = len({s for s, t, _ in DISEASE_GRAPH_EDGES if t in expanded_names})
+                            n_rows = max(len(expanded), n_source)
+                            graph_h = max(200, min(300, n_rows * 90 + 50))
+                            with graph_slot.container():
+                                st.caption("Comorbidity graph — conditions expanded from patient profile ([Bütün et al. 2018](https://link.springer.com/article/10.1007/s41109-018-0101-4))")
+                                components.html(graph_html, height=graph_h, scrolling=False)
+
                 st.subheader("Agent Reasoning Trace")
-                progress_slot = st.empty()
                 trace_box = st.container(height=620, border=True)
 
                 if st.session_state.run_for == pid:
@@ -1322,12 +1370,11 @@ else:
                         st.markdown("*Agent reasoning in progress...*")
                         _last_event_slot = st.empty()
 
-                        def on_event(event, _session=session, _slot=progress_slot,
+                        def on_event(event, _session=session,
                                      _last=_last_event_slot, _ps=pipeline_summary_slot,
-                                     _ls=landscape_slot, _patient=patient):
+                                     _ls=landscape_slot, _patient=patient,
+                                     _gs=graph_slot):
                             _session["trace"].append(event)
-                            with _slot.container():
-                                render_progress(_session["trace"])
                             if event.get("type") == "pipeline_summary":
                                 with _ps.container():
                                     render_pipeline_summary(event)
@@ -1361,9 +1408,6 @@ else:
                     if pipeline_events:
                         with pipeline_summary_slot.container():
                             render_pipeline_summary(pipeline_events[0])
-                    if session["trace"]:
-                        with progress_slot.container():
-                            render_progress(session["trace"])
                     with trace_box:
                         for event in session["trace"]:
                             if event.get("type") != "pipeline_summary":
