@@ -243,7 +243,20 @@ def render_patient_profile(patient: dict) -> None:
     total_obs = summary.get("total_observations", len(observations))
     qaly = _obs_val(nullcat, "qaly")
 
-    active_conds = [c for c in conditions if c.get("active")]
+    def _cond_order(c: dict) -> int:
+        d = c.get("description", "").lower()
+        if "(finding)" in d:
+            return 0
+        if "(disorder)" in d:
+            return 1
+        if "(situation)" in d:
+            return 2
+        return 3
+
+    active_conds = sorted(
+        [c for c in conditions if c.get("active")],
+        key=_cond_order,
+    )
 
     seen: set = set()
     active_meds = []
@@ -258,9 +271,8 @@ def render_patient_profile(patient: dict) -> None:
         "warning": "background:#fffbe6;color:#874d00;border:1px solid #ffe58f;",
         "neutral": "background:#f5f5f5;color:#595959;border:1px solid #d9d9d9;",
     }
-    chip_style_base = ("display:inline-block;padding:3px 10px;border-radius:20px;"
-                       "font-size:11.5px;font-weight:500;margin:2px 3px 2px 0;"
-                       "white-space:nowrap;line-height:1.6;")
+    chip_style_base = ("padding:3px 10px;border-radius:20px;"
+                       "font-size:11.5px;font-weight:500;line-height:1.6;")
     def _chip(c: dict) -> str:
         desc = c.get("description", "")
         sev = _cond_severity(desc)
@@ -269,11 +281,21 @@ def render_patient_profile(patient: dict) -> None:
 
     chips = "".join(_chip(c) for c in active_conds)
 
-    # ── Observation data: all vitals + null-category + survey scores ──
-    _SCORE_KEYWORDS = [
-        "phq-2", "patient health questionnaire",
-        "gad-7", "generalized anxiety",
-        "hark", "fall risk", "stress level",
+    # ── Group observations by category ──
+    _CAT_LABELS = {
+        "vital-signs":    "Vital Signs",
+        "laboratory":     "Laboratory",
+        "exam":           "Exam",
+        "imaging":        "Imaging",
+        "procedure":      "Procedure",
+        "therapy":        "Therapy",
+        "survey":         "Survey",
+        "social-history": "Social History",
+        None:             "Other",
+    }
+    _CAT_ORDER = [
+        "vital-signs", "laboratory", "exam", "imaging",
+        "procedure", "therapy", "survey", "social-history", None,
     ]
 
     def _fmt_entry(o: dict) -> tuple:
@@ -285,40 +307,24 @@ def render_patient_profile(patient: dict) -> None:
         value_str = f"{formatted} {units}".strip() if units else formatted
         return (o.get("description", ""), value_str)
 
-    obs_pairs = (
-        [_fmt_entry(o) for o in vitals]
-        + [_fmt_entry(o) for o in nullcat]
-        + [
-            _fmt_entry(o) for o in survey
-            if any(kw in o.get("description", "").lower() for kw in _SCORE_KEYWORDS)
-        ]
-    )
+    from collections import defaultdict
+    obs_by_cat: dict = defaultdict(list)
+    for o in observations:
+        obs_by_cat[o.get("category")].append(o)
 
-    # ── Medication grid ──
-    lm, rm = active_meds[::2], active_meds[1::2]
-    med_rows = []
-    for i in range(max(len(lm), len(rm))):
-        row_html = ""
-        for col in [lm, rm]:
-            if i < len(col):
-                m = col[i]
-                name = m.get("description", "—")
-                reason = m.get("reason_description") or ""
-                start = _fmt_med_date(m.get("start") or "")
-                sub = " · ".join(filter(None, [reason, start]))
-                row_html += (
-                    f'<div style="border-left:2px solid #e8eaed;padding:4px 0 4px 10px;'
-                    f'overflow:hidden;">'
-                    f'<div style="font-size:12px;color:#1a1a1a;font-weight:500;'
-                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>'
-                    f'<div style="font-size:11px;color:#5f6368;margin-top:1px;'
-                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{sub}</div>'
-                    f'</div>'
-                )
-            else:
-                row_html += "<div></div>"
-        med_rows.append(row_html)
-    meds_inner = "\n".join(med_rows)
+    # ── Medication list (single column) ──
+    meds_inner = ""
+    for m in active_meds:
+        name = m.get("description", "—")
+        reason = m.get("reason_description") or ""
+        start = _fmt_med_date(m.get("start") or "")
+        sub = " · ".join(filter(None, [reason, start]))
+        meds_inner += (
+            f'<div style="border-left:2px solid #e8eaed;padding:4px 0 4px 10px;">'
+            f'<div style="font-size:12px;color:#1a1a1a;font-weight:500;">{name}</div>'
+            f'<div style="font-size:11px;color:#5f6368;margin-top:1px;">{sub}</div>'
+            f'</div>'
+        )
 
     header_html = f"""
 <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:4px 2px 4px 2px;">
@@ -375,32 +381,39 @@ def render_patient_profile(patient: dict) -> None:
     with st.expander("Active Conditions", expanded=True):
         st.markdown(
             f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;'
-            f'line-height:2.2;padding:2px 0 4px 0;">{chips}</div>',
+            f'display:flex;flex-wrap:wrap;gap:5px;padding:2px 0 6px 0;'
+            f'width:100%;box-sizing:border-box;overflow:hidden;">{chips}</div>',
             unsafe_allow_html=True,
         )
 
-    with st.expander("Vitals & Scores", expanded=True):
+    for cat_key in _CAT_ORDER:
+        cat_obs = obs_by_cat.get(cat_key, [])
+        if not cat_obs:
+            continue
+        label = _CAT_LABELS[cat_key]
+        pairs = [_fmt_entry(o) for o in cat_obs]
         rows_html = ""
-        for i, (label, value) in enumerate(obs_pairs):
+        for i, (name, value) in enumerate(pairs):
             bg = "background:#f8f9fa;" if i % 2 == 0 else ""
             rows_html += (
                 f'<tr style="{bg}">'
                 f'<td style="padding:5px 12px 5px 4px;font-size:12px;color:#5f6368;'
-                f'width:60%;vertical-align:top;">{label}</td>'
-                f'<td style="padding:5px 4px 5px 0;font-size:12px;color:#1a1a1a;'
+                f'width:60%;vertical-align:top;">{name}</td>'
+                f'<td style="padding:5px 12px 5px 4px;font-size:12px;color:#1a1a1a;'
                 f'font-weight:500;vertical-align:top;">{value}</td>'
                 f'</tr>'
             )
-        st.markdown(
-            f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">'
-            f'<table style="width:100%;border-collapse:collapse;">{rows_html}</table></div>',
-            unsafe_allow_html=True,
-        )
+        with st.expander(label, expanded=False):
+            st.markdown(
+                f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">'
+                f'<table style="width:100%;border-collapse:collapse;">{rows_html}</table></div>',
+                unsafe_allow_html=True,
+            )
 
     with st.expander("Active Medications", expanded=True):
         st.markdown(
             f'<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;'
-            f'display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">{meds_inner}</div>',
+            f'display:flex;flex-direction:column;gap:8px;padding-bottom:12px;">{meds_inner}</div>',
             unsafe_allow_html=True,
         )
 
@@ -529,8 +542,14 @@ _SIDEBAR_CSS = """
 <style>
 /* ── Base ── */
 [data-testid="stSidebar"] { background: #ffffff; }
-[data-testid="stSidebarContent"] { padding-top: 0 !important; }
-[data-testid="stSidebarUserContent"] { padding-top: 0 !important; }
+[data-testid="stSidebarContent"] {
+    padding-top: 0 !important;
+    overflow: hidden !important;
+}
+[data-testid="stSidebarUserContent"] {
+    padding-top: 0 !important;
+    overflow: hidden !important;
+}
 
 /* Kill the flex gap Streamlit puts between every sidebar widget */
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
@@ -583,7 +602,7 @@ _SIDEBAR_CSS = """
 
 
 # ============================================================
-# BRANDING HTML (iframe: has JS for collapse toggle)
+# BRANDING HTML (logo + app name)
 # ============================================================
 
 def _branding_html(logo_b64: str) -> str:
@@ -598,61 +617,17 @@ def _branding_html(logo_b64: str) -> str:
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{background:#ffffff;overflow:hidden;
      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}}
-.row{{display:flex;align-items:center;justify-content:space-between;
+.row{{display:flex;align-items:center;gap:10px;
       padding:14px 14px 12px 14px;height:58px}}
-.left{{display:flex;align-items:center;gap:10px}}
 .logo{{width:28px;height:28px;object-fit:contain}}
 .name{{font-size:17px;font-weight:600;color:#0d0d0d;letter-spacing:-0.3px}}
-.toggle{{all:unset;display:flex;align-items:center;justify-content:center;
-         width:30px;height:30px;border:1.5px solid #d0d0d0;border-radius:7px;
-         cursor:pointer;background:#fff;color:#555;flex-shrink:0;
-         transition:background 0.12s ease}}
-.toggle:hover{{background:#f5f5f5}}
 </style>
 </head>
 <body>
 <div class="row">
-  <div class="left">
-    {logo_tag}
-    <span class="name">Covalence</span>
-  </div>
-  <button class="toggle" onclick="collapseSidebar()" title="Collapse sidebar">
-    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
-         fill="none" stroke="currentColor" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2"/>
-      <line x1="9" y1="3" x2="9" y2="21"/>
-      <polyline points="15 8 19 12 15 16"/>
-    </svg>
-  </button>
+  {logo_tag}
+  <span class="name">Covalence</span>
 </div>
-<script>
-function collapseSidebar() {{
-  var p = window.parent;
-  // The Streamlit sidebar toggle is inside stSidebarContent but outside stSidebarUserContent
-  var sidebarContent = p.document.querySelector('[data-testid="stSidebarContent"]');
-  if (sidebarContent) {{
-    var userContent = sidebarContent.querySelector('[data-testid="stSidebarUserContent"]');
-    var btns = sidebarContent.querySelectorAll('button');
-    for (var i = 0; i < btns.length; i++) {{
-      if (!userContent || !userContent.contains(btns[i])) {{
-        btns[i].click();
-        return;
-      }}
-    }}
-  }}
-  // Fallback selectors (vary by Streamlit version)
-  var selectors = [
-    '[data-testid="collapsedControl"]',
-    'button[aria-label="Close sidebar"]',
-    'button[aria-label="Collapse sidebar"]',
-  ];
-  for (var j = 0; j < selectors.length; j++) {{
-    var btn = p.document.querySelector(selectors[j]);
-    if (btn) {{ btn.click(); return; }}
-  }}
-}}
-</script>
 </body>
 </html>"""
 
@@ -804,7 +779,7 @@ st.caption("Track 1 · Clinical Decision Support · Pfizer Medical Intelligence 
 # ----- SIDEBAR -----
 
 with st.sidebar:
-    # Branding row (iframe: has JS for collapse toggle)
+    # Branding row
     components.html(_branding_html(_LOGO_B64), height=58, scrolling=False)
 
     # Find Matches pill button
