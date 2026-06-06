@@ -104,14 +104,13 @@ def render_progress(trace: list) -> None:
         if stage > reached:
             reached = stage
 
-    cols = st.columns(len(_STAGES))
-    for i, (col, label) in enumerate(zip(cols, _STAGES)):
+    for i, label in enumerate(_STAGES):
         if i < reached:
-            col.success(f"✓ {label}")
+            st.success(f"✓ {label}")
         elif i == reached:
-            col.info(f"▶ {label}")
+            st.info(f"▶ {label}")
         else:
-            col.markdown(f"<span style='color:grey'>○ {label}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:grey'>○ {label}</span>", unsafe_allow_html=True)
 
 
 def render_event(event: dict):
