@@ -140,6 +140,6 @@ Tool schemas are defined in `tools/__init__.py`; the agent sees them as OpenAI-s
 
 ## Three differentiators vs. published literature
 
-1. **Continuous matching** to evolving criteria (toggle the snapshot in the Streamlit sidebar)
+1. **Diagnosis Prediction** Research-backed prediction of undiagnosed illnesses and early searching for potential matching to those trials
 2. **Proactive missing-data flagging** instead of silent failure or LLM guessing
 3. **Multi-indication surfacing** across therapy areas — the agent autonomously decides whether to search cross-indication
